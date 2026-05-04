@@ -30,7 +30,10 @@ type Product = {
   qty: number;
   brand?: string | null;
   color?: string | null;
+  colorName?: string | null;
   colorHex?: string | null;
+  colorFamily?: string | null;
+  colorFamilyId?: number | string | null;
   category: string;
   categoryId?: number | string | null;
   categorySlug?: string | null;
@@ -54,6 +57,7 @@ type Lookups = {
   sizes: Lookup[];
   genders: Lookup[];
   garmentTypes: Lookup[];
+  colorFamilies?: Lookup[];
 };
 
 type SortOption = 'newest' | 'priceLow' | 'priceHigh';
@@ -99,6 +103,7 @@ export default function CatalogScreen() {
     sizes: [],
     genders: [],
     garmentTypes: [],
+    colorFamilies: [],
   });
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -107,6 +112,7 @@ export default function CatalogScreen() {
   const [categoryId, setCategoryId] = useState<number | string | 'all'>('all');
   const [sizeLabel, setSizeLabel] = useState<string | 'all'>('all');
   const [genderId, setGenderId] = useState<number | string | 'all'>('all');
+  const [colorFamilyId, setColorFamilyId] = useState<number | string | 'all'>('all');
   const [inStockOnly, setInStockOnly] = useState(true);
   const [sort, setSort] = useState<SortOption>('newest');
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -126,6 +132,7 @@ export default function CatalogScreen() {
       sizes: meta.sizes ?? [],
       genders: meta.genders ?? [],
       garmentTypes: meta.garmentTypes ?? [],
+      colorFamilies: meta.colorFamilies ?? [],
     });
   }, [token, user?.user_id]);
 
@@ -202,6 +209,7 @@ export default function CatalogScreen() {
     categoryId !== 'all',
     sizeLabel !== 'all',
     genderId !== 'all',
+    colorFamilyId !== 'all',
     !inStockOnly,
     sort !== 'newest',
   ].filter(Boolean).length;
@@ -217,6 +225,8 @@ export default function CatalogScreen() {
         product.description,
         product.brand,
         product.color,
+        product.colorName,
+        product.colorFamily,
         product.category,
         product.gender,
         product.size,
@@ -230,6 +240,7 @@ export default function CatalogScreen() {
         (categoryId === 'all' || String(product.categoryId) === String(categoryId)) &&
         (!selectedSize || sizes.includes(selectedSize)) &&
         (genderId === 'all' || String(product.genderId) === String(genderId)) &&
+        (colorFamilyId === 'all' || String(product.colorFamilyId) === String(colorFamilyId)) &&
         (!inStockOnly || product.qty > 0)
       );
     });
@@ -239,12 +250,13 @@ export default function CatalogScreen() {
       if (sort === 'priceHigh') return b.price - a.price;
       return 0;
     });
-  }, [categoryId, genderId, inStockOnly, products, search, sizeLabel, sort]);
+  }, [categoryId, colorFamilyId, genderId, inStockOnly, products, search, sizeLabel, sort]);
 
   const resetFilters = () => {
     setCategoryId('all');
     setSizeLabel('all');
     setGenderId('all');
+    setColorFamilyId('all');
     setInStockOnly(true);
     setSort('newest');
   };
@@ -363,10 +375,12 @@ export default function CatalogScreen() {
         lookups={lookups}
         sizeLabel={sizeLabel}
         genderId={genderId}
+        colorFamilyId={colorFamilyId}
         inStockOnly={inStockOnly}
         sort={sort}
         onSizeChange={setSizeLabel}
         onGenderChange={setGenderId}
+        onColorFamilyChange={setColorFamilyId}
         onStockChange={setInStockOnly}
         onSortChange={setSort}
         onReset={resetFilters}
@@ -448,10 +462,12 @@ type FilterModalProps = {
   lookups: Lookups;
   sizeLabel: string | 'all';
   genderId: number | string | 'all';
+  colorFamilyId: number | string | 'all';
   inStockOnly: boolean;
   sort: SortOption;
   onSizeChange: (value: string | 'all') => void;
   onGenderChange: (value: number | string | 'all') => void;
+  onColorFamilyChange: (value: number | string | 'all') => void;
   onStockChange: (value: boolean) => void;
   onSortChange: (value: SortOption) => void;
   onReset: () => void;
@@ -463,10 +479,12 @@ function FilterModal({
   lookups,
   sizeLabel,
   genderId,
+  colorFamilyId,
   inStockOnly,
   sort,
   onSizeChange,
   onGenderChange,
+  onColorFamilyChange,
   onStockChange,
   onSortChange,
   onReset,
@@ -508,6 +526,18 @@ function FilterModal({
                 label={lookupLabel(gender)}
                 selected={genderId !== 'all' && String(genderId) === String(gender.id)}
                 onPress={() => onGenderChange(gender.id)}
+              />
+            ))}
+          </FilterSection>
+
+          <FilterSection title="Color">
+            <Chip label="All" selected={colorFamilyId === 'all'} onPress={() => onColorFamilyChange('all')} />
+            {(lookups.colorFamilies ?? []).map((family) => (
+              <Chip
+                key={family.id}
+                label={lookupLabel(family)}
+                selected={colorFamilyId !== 'all' && String(colorFamilyId) === String(family.id)}
+                onPress={() => onColorFamilyChange(family.id)}
               />
             ))}
           </FilterSection>
