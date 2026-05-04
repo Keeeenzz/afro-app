@@ -7,6 +7,16 @@ export interface AuthUser {
   phone?: string;
   is_admin: boolean;
   profile_photo_url?: string;
+  idNumber?: string | null;
+  id_number?: string | null;
+  fashion_style?: string | null;
+  preferred_size?: string | null;
+  skin_tone_detected?: boolean;
+  skin_hex?: string | null;
+  body_chest_cm?: number | null;
+  body_waist_cm?: number | null;
+  body_hip_cm?: number | null;
+  body_height_cm?: number | null;
 }
 
 type Draft = Partial<{
@@ -19,10 +29,17 @@ type Draft = Partial<{
   phone: string;
   id_type: string;
   // To this: // id_type_id: number; // id_type_label: string; // keep for display purposes
+  id_number: string;
   front_id_url: string;
   back_id_url: string;
   shipping_address: string;
   fashion_style: string;
+  preferred_size: string;
+  skin_hex: string | null;
+  body_chest_cm: number | null;
+  body_waist_cm: number | null;
+  body_hip_cm: number | null;
+  body_height_cm: number | null;
 }>;
 
 interface AuthStore {

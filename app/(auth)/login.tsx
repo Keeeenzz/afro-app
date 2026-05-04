@@ -15,6 +15,7 @@ import { Input } from '@/components/ui/Input';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { useAuthStore } from '@/hooks/useAuthStore';
 import { Colors, FontSize, Spacing } from '@/constants/theme';
+import { apiPost } from '@/lib/api';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -38,20 +39,14 @@ export default function LoginPage() {
     if (!validate()) return;
     setLoading(true);
     try {
-      // TODO: const res = await api.post('/auth/login', { email, password });
-      await new Promise((r) => setTimeout(r, 800));
-      setUser(
-        {
-          user_id: '00000000-0000-0000-0000-000000000001',
-          email,
-          full_name: 'Test User',
-          is_admin: false,
-        },
-        'stub-token'
-      );
-      router.replace('/(auth)/customize-feed');
-    } catch {
-      setErrors({ general: 'Invalid email or password.' });
+      const session = await apiPost<{ user: any; token: string }>('/auth/app/login', {
+        email,
+        password,
+      });
+      setUser(session.user, session.token);
+      router.replace('/(tabs)/catalog');
+    } catch (error) {
+      setErrors({ general: error instanceof Error ? error.message : 'Invalid email or password.' });
     } finally {
       setLoading(false);
     }

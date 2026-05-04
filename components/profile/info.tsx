@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useAuthStore } from '@/hooks/useAuthStore';
 import { Colors, FontSize, Radius, Spacing } from '@/constants/theme';
+import { Button } from '@/components/ui/Button';
+import { Input } from '@/components/ui/Input';
+import { apiPatch } from '@/lib/api';
 
 function InfoRow({
   icon,
@@ -29,31 +32,130 @@ function InfoRow({
 }
 
 export function InfoTab() {
-  const { user, logout } = useAuthStore();
+  const { user, token, logout, setUser } = useAuthStore();
   const router = useRouter();
+  const [isEditing, setIsEditing] = useState(false);
+  const [fullName, setFullName] = useState(user?.full_name ?? '');
+  const [email, setEmail] = useState(user?.email ?? '');
+  const [phone, setPhone] = useState(user?.phone ?? '');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    setFullName(user?.full_name ?? '');
+    setEmail(user?.email ?? '');
+    setPhone(user?.phone ?? '');
+  }, [user?.email, user?.full_name, user?.phone]);
 
   const handleLogout = () => {
     logout();
     router.replace('/(auth)');
   };
 
+  const handleSave = async () => {
+    if (!user?.user_id) return;
+
+    if (!fullName.trim() || !email.trim()) {
+      setError('Full name and email are required.');
+      return;
+    }
+
+    setError('');
+    setLoading(true);
+
+    try {
+      const response = await apiPatch<{ user: any }>(
+        `/auth/app/account/${user.user_id}`,
+        {
+          full_name: fullName.trim(),
+          email: email.trim(),
+          phone: phone.trim() || null,
+        },
+        token,
+      );
+      setUser(response.user, token ?? '');
+      setIsEditing(false);
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Could not save profile.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCancel = () => {
+    setFullName(user?.full_name ?? '');
+    setEmail(user?.email ?? '');
+    setPhone(user?.phone ?? '');
+    setError('');
+    setIsEditing(false);
+  };
+
   return (
     <ScrollView showsVerticalScrollIndicator={false}>
       <Text style={styles.sectionTitle}>Personal Info</Text>
 
-      <View style={styles.infoCard}>
-        <InfoRow icon="person-outline" label={user?.full_name ?? '—'} />
-        <InfoRow icon="mail-outline" label={user?.email ?? '—'} />
-        <InfoRow
-          icon="call-outline"
-          label={user?.phone ? `+63 ${user.phone}` : '—'}
-        />
-        <InfoRow icon="location-outline" label="Manila" last />
-      </View>
+      {isEditing ? (
+        <View style={styles.editCard}>
+          <Input
+            label="Full Name"
+            value={fullName}
+            onChangeText={(value) => {
+              setFullName(value);
+              setError('');
+            }}
+            autoCapitalize="words"
+          />
+          <Input
+            label="Email"
+            value={email}
+            onChangeText={(value) => {
+              setEmail(value);
+              setError('');
+            }}
+            keyboardType="email-address"
+          />
+          <Input
+            label="Phone"
+            value={phone}
+            onChangeText={(value) => {
+              setPhone(value);
+              setError('');
+            }}
+            keyboardType="phone-pad"
+          />
+          {error ? <Text style={styles.error}>{error}</Text> : null}
+          <View style={styles.editActions}>
+            <Button
+              label="Cancel"
+              variant="outline"
+              onPress={handleCancel}
+              style={styles.actionButton}
+            />
+            <Button
+              label="Save"
+              onPress={handleSave}
+              loading={loading}
+              style={styles.actionButton}
+            />
+          </View>
+        </View>
+      ) : (
+        <>
+          <View style={styles.infoCard}>
+            <InfoRow icon="person-outline" label={user?.full_name ?? '-'} />
+            <InfoRow icon="mail-outline" label={user?.email ?? '-'} />
+            <InfoRow
+              icon="call-outline"
+              label={user?.phone ? `+63 ${user.phone}` : '-'}
+            />
+            <InfoRow icon="location-outline" label="Manila" last />
+          </View>
 
-      <TouchableOpacity style={styles.editBtn}>
-        <Text style={styles.editBtnText}>Edit</Text>
-      </TouchableOpacity>
+          <TouchableOpacity style={styles.editBtn} onPress={() => setIsEditing(true)}>
+            <Text style={styles.editBtnText}>Edit</Text>
+          </TouchableOpacity>
+        </>
+      )}
 
       <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
         <Ionicons name="log-out-outline" size={18} color={Colors.status.error} />
@@ -79,6 +181,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.border.default,
     overflow: 'hidden',
+  },
+  editCard: {
+    backgroundColor: Colors.bg.card,
+    borderRadius: Radius.lg,
+    borderWidth: 1,
+    borderColor: Colors.border.default,
+    padding: Spacing.md,
   },
   infoRow: {
     flexDirection: 'row',
@@ -109,6 +218,19 @@ const styles = StyleSheet.create({
     color: Colors.brand.blue,
     fontWeight: '700',
     fontSize: FontSize.base,
+  },
+  editActions: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+  },
+  actionButton: {
+    flex: 1,
+  },
+  error: {
+    color: Colors.status.error,
+    fontSize: FontSize.sm,
+    marginBottom: Spacing.sm,
+    textAlign: 'center',
   },
   logoutBtn: {
     flexDirection: 'row',

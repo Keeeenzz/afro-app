@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -7,19 +7,36 @@ import {
   ScrollView,
   TouchableOpacity,
 } from 'react-native';
+import { useRouter } from 'expo-router';
 import { useAuthStore } from '@/hooks/useAuthStore';
 import { Colors, FontSize, Radius, Spacing } from '@/constants/theme';
 import { InfoTab } from '@/components/profile/info';
 import { OrdersTab } from '@/components/profile/orders-tab';
 import { SavedTab } from '@/components/profile/saved';
 import { StyleTab } from '@/components/profile/style';
+import { apiGet } from '@/lib/api';
 
 type Tab = 'Info' | 'Orders' | 'Saved' | 'Style';
 
 export default function ProfileScreen() {
-  const { user } = useAuthStore();
+  const { user, token } = useAuthStore();
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<Tab>('Info');
+  const [summary, setSummary] = useState({ orders: 0, saved: 0, reviews: 0 });
   const tabs: Tab[] = ['Info', 'Orders', 'Saved', 'Style'];
+  const idNumber = user?.id_number ?? user?.idNumber;
+  const isVerified = !!idNumber?.trim();
+
+  useEffect(() => {
+    if (!user?.user_id) return;
+
+    apiGet<{ orders: number; saved: number; reviews: number }>(
+      `/profile/${user.user_id}/summary`,
+      token,
+    )
+      .then(setSummary)
+      .catch(() => setSummary({ orders: 0, saved: 0, reviews: 0 }));
+  }, [activeTab, token, user?.user_id]);
 
 return (
     <SafeAreaView style={styles.safe}>
@@ -39,23 +56,31 @@ return (
         <Text style={styles.profileName} numberOfLines={1}>
           {user?.full_name ?? 'Guest'}
         </Text>
+        {!isVerified && user ? (
+          <TouchableOpacity
+            activeOpacity={0.75}
+            onPress={() => router.push('/(auth)/upload-id')}
+          >
+            <Text style={styles.verifyLink}>Verify Email</Text>
+          </TouchableOpacity>
+        ) : null}
         <View style={styles.badge}>
-          <Text style={styles.badgeText}>New Member</Text>
+          <Text style={styles.badgeText}>{isVerified ? 'Verified' : 'Unverified'}</Text>
         </View>
       </View>
 
       {/* Stats */}
       <View style={styles.statsRow}>
         <View style={styles.stat}>
-          <Text style={styles.statNum}>5</Text>
+          <Text style={styles.statNum}>{summary.orders}</Text>
           <Text style={styles.statLabel}>Orders</Text>
         </View>
         <View style={styles.stat}>
-          <Text style={styles.statNum}>6</Text>
+          <Text style={styles.statNum}>{summary.saved}</Text>
           <Text style={styles.statLabel}>Saved</Text>
         </View>
         <View style={styles.stat}>
-          <Text style={styles.statNum}>7</Text>
+          <Text style={styles.statNum}>{summary.reviews}</Text>
           <Text style={styles.statLabel}>Reviews</Text>
         </View>
       </View>
@@ -145,6 +170,12 @@ const styles = StyleSheet.create({
     borderColor: Colors.brand.blue,
   },
   badgeText: { fontSize: FontSize.xs, color: Colors.brand.blue, fontWeight: '600' },
+  verifyLink: {
+    color: Colors.brand.blueLight,
+    fontSize: FontSize.xs,
+    fontWeight: '800',
+    textDecorationLine: 'underline',
+  },
   statsRow: { flexDirection: 'row', gap: Spacing.lg },
   stat: { alignItems: 'center' },
   statNum: { fontSize: FontSize.lg, fontWeight: '800', color: Colors.text.primary },

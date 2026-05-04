@@ -21,14 +21,15 @@ function TabsContent() {
           tabBarInactiveTintColor: '#475569',
         }}
       >
-        <Tabs.Screen name="index" options={{ title: "A'FRO", tabBarLabel: 'Home', tabBarIcon: ({ color, size }) => <Ionicons name="home-outline" size={size} color={color} /> }} />
-        <Tabs.Screen name="catalog" options={{ title: 'Catalog', tabBarIcon: ({ color, size }) => <Ionicons name="grid-outline" size={size} color={color} /> }} />
+        <Tabs.Screen name="index" options={{ title: "A'FRO", headerShown: false, tabBarLabel: 'Home', tabBarIcon: ({ color, size }) => <Ionicons name="home-outline" size={size} color={color} /> }} />
+        <Tabs.Screen name="catalog" options={{ title: 'Catalog', headerShown: false, tabBarIcon: ({ color, size }) => <Ionicons name="grid-outline" size={size} color={color} /> }} />
         <Tabs.Screen name="messages" options={{ title: 'Messages', tabBarIcon: ({ color, size }) => <Ionicons name="chatbubble-outline" size={size} color={color} /> }} />
         <Tabs.Screen name="profile/index" options={{ title: 'Profile', headerTitle: 'Profile', tabBarButton: () => null }} />
         <Tabs.Screen name="orders" options={{ title: 'Orders', tabBarButton: () => null }} />
         <Tabs.Screen name="cart" options={{ title: 'Cart', tabBarButton: () => null }} />
         <Tabs.Screen name="reviews" options={{ title: 'Reviews', tabBarButton: () => null }} />
         <Tabs.Screen name="settings" options={{ title: 'Settings', tabBarButton: () => null }} />
+        <Tabs.Screen name="product/[id]" options={{ title: 'Product', headerShown: false, tabBarButton: () => null }} />
       </Tabs>
       <SideNav visible={isNavOpen} onClose={closeNav} />
     </View>

@@ -13,10 +13,12 @@ import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { Button } from '@/components/ui/Button';
+import { Input } from '@/components/ui/Input';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { StepIndicator } from '@/components/auth/StepIndicator';
 import { useAuthStore } from '@/hooks/useAuthStore';
 import { Colors, FontSize, Radius, Spacing } from '@/constants/theme';
+import { apiPatch } from '@/lib/api';
 
 const ID_TYPES = [
   { label: 'Philippine National ID', value: 'national_id' },
@@ -32,10 +34,15 @@ type Step = 'select' | 'upload';
 export default function UploadIdPage() {
   const router = useRouter();
   const setDraft = useAuthStore((s) => s.setDraft);
+  const user = useAuthStore((s) => s.user);
+  const token = useAuthStore((s) => s.token);
+  const setUser = useAuthStore((s) => s.setUser);
+  const isLoggedIn = !!user?.user_id;
 
   const [step, setStep] = useState<Step>('select');
   const [selected, setSelected] = useState<string | null>(null);
   const [selectError, setSelectError] = useState('');
+  const [idNumber, setIdNumber] = useState('');
   const [frontUri, setFrontUri] = useState<string | null>(null);
   const [backUri, setBackUri] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -62,18 +69,47 @@ export default function UploadIdPage() {
   };
 
   const handleSubmit = async () => {
+    if (!selected) {
+      Alert.alert('Missing ID Type', 'Please select an ID type.');
+      return;
+    }
+
+    if (!idNumber.trim()) {
+      Alert.alert('Missing ID Number', 'Please enter your ID number.');
+      return;
+    }
+
     if (!frontUri || !backUri) {
       Alert.alert('Missing Photos', 'Please upload both front and back of your ID.');
       return;
     }
     setLoading(true);
     try {
-      setDraft({ front_id_url: frontUri, back_id_url: backUri });
-      // TODO: upload to server
-      await new Promise((r) => setTimeout(r, 1000));
+      const verificationData = {
+        id_type: selected,
+        id_number: idNumber.trim(),
+        front_id_url: frontUri,
+        back_id_url: backUri,
+      };
+
+      if (isLoggedIn && user?.user_id) {
+        const response = await apiPatch<{ user: any }>(
+          `/auth/app/verify-id/${user.user_id}`,
+          verificationData,
+          token,
+        );
+        setUser(response.user, token ?? '');
+        router.replace('/(tabs)/profile');
+        return;
+      }
+
+      setDraft(verificationData);
       router.replace('/(auth)/customize-feed');
-    } catch {
-      Alert.alert('Error', 'Failed to submit. Please try again.');
+    } catch (submitError) {
+      Alert.alert(
+        'Error',
+        submitError instanceof Error ? submitError.message : 'Failed to submit. Please try again.',
+      );
     } finally {
       setLoading(false);
     }
@@ -116,7 +152,13 @@ export default function UploadIdPage() {
           {selectError ? <Text style={styles.error}>{selectError}</Text> : null}
 
           <TouchableOpacity
-            onPress={() => router.push('/(tabs)')}
+            onPress={() => {
+              if (isLoggedIn) {
+                router.back();
+                return;
+              }
+              router.push('/(auth)/customize-feed');
+            }}
             style={styles.skipRow}
           >
             <Text style={styles.skipText}>Skip for now</Text>
@@ -143,6 +185,14 @@ export default function UploadIdPage() {
           By submitting your ID, you agree to our{' '}
           <Text style={styles.termsLink}>Terms</Text>.
         </Text>
+
+        <Input
+          label="ID Number"
+          placeholder="Enter the number shown on your ID"
+          value={idNumber}
+          onChangeText={setIdNumber}
+          autoCapitalize="characters"
+        />
 
         {/* Front View */}
         <TouchableOpacity
@@ -180,7 +230,7 @@ export default function UploadIdPage() {
           label="Submit"
           onPress={handleSubmit}
           loading={loading}
-          disabled={!frontUri || !backUri}
+          disabled={!idNumber.trim() || !frontUri || !backUri}
           style={styles.btn}
         />
       </ScrollView>

@@ -1,95 +1,140 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
-  View,
-  Text,
+  ActivityIndicator,
+  Image,
   StyleSheet,
-  ScrollView,
+  Text,
   TouchableOpacity,
+  View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { apiGet, imageUrl } from '@/lib/api';
+import { useAuthStore } from '@/hooks/useAuthStore';
 import { Colors, FontSize, Radius, Spacing } from '@/constants/theme';
 
 type OrderFilter = 'All' | 'Active' | 'Delivered' | 'Cancelled';
 
-const MOCK_ORDERS = [
-  { id: '1', name: 'Black Jacket', size: 'M', price: 400, status: 'Active' },
-  { id: '2', name: 'Black Jorts', size: 'L', price: 250, status: 'Delivered' },
-  { id: '3', name: 'Gray Jacket', size: 'S', price: 300, status: 'Active' },
-  { id: '4', name: 'Camou Pants', size: 'M', price: 200, status: 'Cancelled' },
-];
+type OrderItem = {
+  orderId: string;
+  orderItemId: string;
+  productId: string;
+  productName: string;
+  unitPrice: number;
+  quantity: number;
+  size: string;
+  status: string;
+  imageUrl?: string | null;
+};
+
+function filterStatus(status: string): OrderFilter {
+  const normalized = status.toLowerCase();
+  if (normalized === 'delivered') return 'Delivered';
+  if (normalized === 'cancelled') return 'Cancelled';
+  return 'Active';
+}
 
 export function OrdersTab() {
+  const { user, token } = useAuthStore();
   const [filter, setFilter] = useState<OrderFilter>('All');
+  const [orders, setOrders] = useState<OrderItem[]>([]);
+  const [loading, setLoading] = useState(true);
   const filters: OrderFilter[] = ['All', 'Active', 'Delivered', 'Cancelled'];
 
-  const filtered =
-    filter === 'All'
-      ? MOCK_ORDERS
-      : MOCK_ORDERS.filter((o) => o.status === filter);
+  useEffect(() => {
+    if (!user?.user_id) {
+      setOrders([]);
+      setLoading(false);
+      return;
+    }
+
+    apiGet<OrderItem[]>(`/profile/${user.user_id}/orders`, token)
+      .then(setOrders)
+      .catch(() => setOrders([]))
+      .finally(() => setLoading(false));
+  }, [token, user?.user_id]);
+
+  const filtered = useMemo(
+    () => (filter === 'All' ? orders : orders.filter((order) => filterStatus(order.status) === filter)),
+    [filter, orders],
+  );
+
+  if (loading) {
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator color={Colors.brand.blueLight} />
+      </View>
+    );
+  }
 
   return (
-    <ScrollView showsVerticalScrollIndicator={false}>
-      {/* Filter pills */}
+    <View>
       <View style={styles.filterRow}>
-        {filters.map((f) => (
+        {filters.map((item) => (
           <TouchableOpacity
-            key={f}
-            style={[styles.filterPill, filter === f && styles.filterPillActive]}
-            onPress={() => setFilter(f)}
+            key={item}
+            style={[styles.filterPill, filter === item && styles.filterPillActive]}
+            onPress={() => setFilter(item)}
           >
-            <Text
-              style={[
-                styles.filterPillText,
-                filter === f && styles.filterPillTextActive,
-              ]}
-            >
-              {f}
+            <Text style={[styles.filterPillText, filter === item && styles.filterPillTextActive]}>
+              {item}
             </Text>
           </TouchableOpacity>
         ))}
       </View>
 
-      {filtered.map((order) => (
-        <View key={order.id} style={styles.orderCard}>
-          <View style={styles.orderImage}>
-            <Ionicons name="shirt-outline" size={28} color={Colors.text.muted} />
-          </View>
-
-          <View style={styles.orderInfo}>
-            <Text style={styles.orderName}>{order.name}</Text>
-            <Text style={styles.orderMeta}>Size {order.size}</Text>
-            <Text style={styles.orderPrice}>₱ {order.price}</Text>
-          </View>
-
-          <View style={styles.orderRight}>
-            <View
-              style={[
-                styles.statusBadge,
-                order.status === 'Active' && styles.statusActive,
-                order.status === 'Delivered' && styles.statusDelivered,
-                order.status === 'Cancelled' && styles.statusCancelled,
-              ]}
-            >
-              <Text style={styles.statusText}>{order.status}</Text>
-            </View>
-            {order.status === 'Active' && (
-              <TouchableOpacity style={styles.trackBtn}>
-                <Text style={styles.trackBtnText}>Track</Text>
-              </TouchableOpacity>
-            )}
-            {order.status === 'Cancelled' && (
-              <TouchableOpacity style={styles.deleteBtn}>
-                <Text style={styles.deleteBtnText}>Delete</Text>
-              </TouchableOpacity>
-            )}
-          </View>
+      {!filtered.length ? (
+        <View style={styles.empty}>
+          <Ionicons name="receipt-outline" size={34} color={Colors.text.muted} />
+          <Text style={styles.emptyTitle}>No orders yet</Text>
+          <Text style={styles.emptyText}>Your real orders will show here after checkout.</Text>
         </View>
-      ))}
-    </ScrollView>
+      ) : (
+        filtered.map((order) => {
+          const status = filterStatus(order.status);
+          const uri = imageUrl(order.imageUrl);
+          return (
+            <View key={order.orderItemId} style={styles.orderCard}>
+              <View style={styles.orderImage}>
+                {uri ? (
+                  <Image source={{ uri }} style={styles.image} resizeMode="cover" />
+                ) : (
+                  <Ionicons name="shirt-outline" size={28} color={Colors.text.muted} />
+                )}
+              </View>
+
+              <View style={styles.orderInfo}>
+                <Text style={styles.orderName}>{order.productName}</Text>
+                <Text style={styles.orderMeta}>Size {order.size} • Qty {order.quantity}</Text>
+                <Text style={styles.orderPrice}>
+                  ₱ {Number(order.unitPrice ?? 0).toLocaleString('en-PH', { maximumFractionDigits: 0 })}
+                </Text>
+              </View>
+
+              <View style={styles.orderRight}>
+                <View
+                  style={[
+                    styles.statusBadge,
+                    status === 'Active' && styles.statusActive,
+                    status === 'Delivered' && styles.statusDelivered,
+                    status === 'Cancelled' && styles.statusCancelled,
+                  ]}
+                >
+                  <Text style={styles.statusText}>{order.status}</Text>
+                </View>
+              </View>
+            </View>
+          );
+        })
+      )}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  center: {
+    paddingVertical: 40,
+    alignItems: 'center',
+  },
   filterRow: {
     flexDirection: 'row',
     gap: 8,
@@ -114,6 +159,23 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   filterPillTextActive: { color: Colors.white },
+  empty: {
+    paddingVertical: 40,
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  emptyTitle: {
+    color: Colors.text.primary,
+    fontSize: FontSize.base,
+    fontWeight: '800',
+    marginTop: 8,
+  },
+  emptyText: {
+    color: Colors.text.secondary,
+    fontSize: FontSize.sm,
+    textAlign: 'center',
+    marginTop: 4,
+  },
   orderCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -132,6 +194,11 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.bg.input,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  image: {
+    width: '100%',
+    height: '100%',
   },
   orderInfo: { flex: 1 },
   orderName: {
@@ -159,25 +226,6 @@ const styles = StyleSheet.create({
   statusText: {
     fontSize: FontSize.xs,
     color: Colors.text.secondary,
-    fontWeight: '600',
-  },
-  trackBtn: {
-    backgroundColor: Colors.brand.blue,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: Radius.sm,
-  },
-  trackBtnText: { fontSize: FontSize.xs, color: Colors.white, fontWeight: '600' },
-  deleteBtn: {
-    borderWidth: 1,
-    borderColor: Colors.status.error,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: Radius.sm,
-  },
-  deleteBtnText: {
-    fontSize: FontSize.xs,
-    color: Colors.status.error,
     fontWeight: '600',
   },
 });

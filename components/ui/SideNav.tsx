@@ -81,7 +81,8 @@ export function SideNav({ visible, onClose }: SideNavProps) {
     setTimeout(() => router.replace('/(auth)'), 250);
   };
 
-  const isVerified = !!user?.email;
+  const idNumber = user?.id_number ?? user?.idNumber;
+  const isVerified = !!idNumber?.trim();
 
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="box-none">

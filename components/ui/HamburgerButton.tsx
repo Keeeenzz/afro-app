@@ -15,7 +15,7 @@ export function HamburgerButton({ onPress }: HamburgerButtonProps) {
       hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
       activeOpacity={0.7}
     >
-      <Ionicons name="menu-outline" size={28} color={Colors.text.primary} />
+      <Ionicons name="menu-outline" size={28} color={Colors.brand.blueLight} />
     </TouchableOpacity>
   );
 }
