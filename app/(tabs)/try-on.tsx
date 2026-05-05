@@ -3,10 +3,11 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 import * as MediaLibrary from 'expo-media-library';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   Image,
   Pressable,
   SafeAreaView,
@@ -501,6 +502,7 @@ export default function TryOnScreen() {
   const [sessionWaistCm, setSessionWaistCm] = useState('');
   const [sessionHipCm, setSessionHipCm] = useState('');
   const [sessionHeightCm, setSessionHeightCm] = useState('');
+  const loadingDotScales = useRef([new Animated.Value(1), new Animated.Value(1), new Animated.Value(1)]).current;
 
   const hydrateProduct = async (product: Product | null) => {
     if (!product?.id) return product;
@@ -589,6 +591,36 @@ export default function TryOnScreen() {
     user?.body_hip_cm,
     user?.body_waist_cm,
   ]);
+
+  useEffect(() => {
+    if (phase !== 'generating') {
+      loadingDotScales.forEach((dot) => dot.setValue(1));
+      return;
+    }
+
+    const animation = Animated.loop(
+      Animated.stagger(
+        140,
+        loadingDotScales.map((dot) =>
+          Animated.sequence([
+            Animated.timing(dot, {
+              toValue: 1.32,
+              duration: 260,
+              useNativeDriver: true,
+            }),
+            Animated.timing(dot, {
+              toValue: 1,
+              duration: 260,
+              useNativeDriver: true,
+            }),
+          ]),
+        ),
+      ),
+    );
+
+    animation.start();
+    return () => animation.stop();
+  }, [loadingDotScales, phase]);
 
   const mightLike = useMemo(() => {
     const tokens = styleTokens(user?.fashion_style);
@@ -730,7 +762,7 @@ export default function TryOnScreen() {
         </TouchableOpacity>
         <View style={styles.brandLockup}>
           <View style={styles.logoMark}>
-            <Text style={styles.logoText}>A</Text>
+            <Image source={require('../../assets/afro-logo.png')} style={styles.headerLogoImage} resizeMode="contain" />
           </View>
           <Text style={styles.brand}>A'FRO</Text>
         </View>
@@ -825,9 +857,12 @@ export default function TryOnScreen() {
                 Our app is draping your selected item{selectedProducts.length > 1 ? 's' : ''} onto your photo.
               </Text>
               <View style={styles.dots}>
-                <View style={styles.dot} />
-                <View style={styles.dot} />
-                <View style={styles.dot} />
+                {loadingDotScales.map((dotScale, index) => (
+                  <Animated.View
+                    key={index}
+                    style={[styles.dot, { transform: [{ scaleX: dotScale }, { scaleY: dotScale }] }]}
+                  />
+                ))}
               </View>
               <Text style={styles.generatingFootnote}>This can take around 10-15 seconds.</Text>
             </View>
@@ -1093,12 +1128,12 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     height: 28,
     justifyContent: 'center',
+    overflow: 'hidden',
     width: 28,
   },
-  logoText: {
-    color: Colors.bg.primary,
-    fontSize: FontSize.base,
-    fontWeight: '900',
+  headerLogoImage: {
+    height: 27,
+    width: 27,
   },
   brand: {
     color: Colors.text.primary,

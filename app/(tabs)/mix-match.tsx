@@ -106,7 +106,7 @@ export default function MixMatchScreen() {
         </TouchableOpacity>
         <View style={styles.brandLockup}>
           <View style={styles.logoMark}>
-            <Text style={styles.logoText}>A</Text>
+            <Image source={require('../../assets/afro-logo.png')} style={styles.headerLogoImage} resizeMode="contain" />
           </View>
           <Text style={styles.brand}>A'FRO</Text>
         </View>
@@ -293,12 +293,12 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     height: 28,
     justifyContent: 'center',
+    overflow: 'hidden',
     width: 28,
   },
-  logoText: {
-    color: Colors.bg.primary,
-    fontSize: FontSize.base,
-    fontWeight: '900',
+  headerLogoImage: {
+    height: 27,
+    width: 27,
   },
   brand: {
     color: Colors.text.primary,

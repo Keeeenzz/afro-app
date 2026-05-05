@@ -65,7 +65,7 @@ export default function LoginPage() {
           <ScreenHeader
             title="Login"
             subtitle="Enter your login details."
-            icon="person-circle-outline"
+            logo
             showBack={true}
           />
 

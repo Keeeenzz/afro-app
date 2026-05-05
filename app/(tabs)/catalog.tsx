@@ -376,7 +376,7 @@ export default function CatalogScreen() {
             <View style={styles.brandRow}>
               <View style={styles.brandLockup}>
                 <View style={styles.logoMark}>
-                  <Text style={styles.logoText}>A</Text>
+                  <Image source={require('../../assets/afro-logo.png')} style={styles.headerLogoImage} resizeMode="contain" />
                 </View>
                 <Text style={styles.brand}>A'FRO</Text>
               </View>
@@ -881,11 +881,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#E8F4FF',
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
   },
-  logoText: {
-    color: Colors.bg.primary,
-    fontWeight: '900',
-    fontSize: FontSize.base,
+  headerLogoImage: {
+    height: 27,
+    width: 27,
   },
   brand: {
     color: Colors.text.primary,
