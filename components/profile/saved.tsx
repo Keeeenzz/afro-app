@@ -83,7 +83,12 @@ export function SavedTab() {
             key={item.id}
             style={styles.savedCard}
             activeOpacity={0.82}
-            onPress={() => router.push(`/(tabs)/product/${item.id}`)}
+            onPress={() =>
+              router.push({
+                pathname: '/(tabs)/product/[id]',
+                params: { id: item.id, from: 'saved' },
+              })
+            }
           >
             <View style={styles.savedImage}>
               {uri ? (

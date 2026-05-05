@@ -78,7 +78,7 @@ function shortPeso(value: number) {
 
 export default function ProductOverviewScreen() {
   const router = useRouter();
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, from } = useLocalSearchParams<{ id: string; from?: string }>();
   const { openNav } = useNav();
   const { user, token } = useAuthStore();
 
@@ -220,6 +220,16 @@ export default function ProductOverviewScreen() {
     }
   };
 
+  const handleBack = () => {
+    const source = Array.isArray(from) ? from[0] : from;
+    if (source === 'saved') {
+      router.replace({ pathname: '/(tabs)/profile', params: { tab: 'Saved' } });
+      return;
+    }
+
+    router.back();
+  };
+
   if (loading) {
     return (
       <View style={styles.center}>
@@ -233,7 +243,7 @@ export default function ProductOverviewScreen() {
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.headerIcon}
-          onPress={() => router.back()}
+          onPress={handleBack}
           activeOpacity={0.75}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
@@ -389,7 +399,16 @@ export default function ProductOverviewScreen() {
 
       {product ? (
         <View style={styles.actionBar}>
-          <TouchableOpacity style={[styles.tryOnButton, isSoldOut && styles.disabledButton]} disabled={isSoldOut}>
+          <TouchableOpacity
+            style={[styles.tryOnButton, isSoldOut && styles.disabledButton]}
+            disabled={isSoldOut}
+            onPress={() =>
+              router.push({
+                pathname: '/(tabs)/try-on',
+                params: { productId: product.id },
+              })
+            }
+          >
             <Ionicons name="sparkles-outline" size={18} color={Colors.text.primary} />
             <Text style={styles.tryOnText}>Try On</Text>
           </TouchableOpacity>

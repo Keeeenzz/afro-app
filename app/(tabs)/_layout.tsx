@@ -30,6 +30,9 @@ function TabsContent() {
         <Tabs.Screen name="reviews" options={{ title: 'Reviews', tabBarButton: () => null }} />
         <Tabs.Screen name="settings" options={{ title: 'Settings', tabBarButton: () => null }} />
         <Tabs.Screen name="product/[id]" options={{ title: 'Product', headerShown: false, tabBarButton: () => null }} />
+        <Tabs.Screen name="skin-tone" options={{ title: 'Skin Tone AI', headerShown: false, tabBarButton: () => null }} />
+        <Tabs.Screen name="mix-match" options={{ title: 'Mix & Match', headerShown: false, tabBarButton: () => null }} />
+        <Tabs.Screen name="try-on" options={{ title: 'Try On', headerShown: false, tabBarButton: () => null }} />
       </Tabs>
       <SideNav visible={isNavOpen} onClose={closeNav} />
     </View>

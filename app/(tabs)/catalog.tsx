@@ -15,7 +15,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { apiGet, apiPost, imageUrl } from '@/lib/api';
 import { Colors, FontSize, Radius, Spacing } from '@/constants/theme';
 import { useNav } from '@/context/NavContext';
@@ -67,6 +67,7 @@ const SORT_LABELS: Record<SortOption, string> = {
   priceLow: 'Price: Low',
   priceHigh: 'Price: High',
 };
+const PRODUCTS_PER_PAGE = 10;
 
 function compactPeso(value: number) {
   return `₱ ${Number(value ?? 0).toLocaleString('en-PH', {
@@ -93,9 +94,35 @@ function productSizeLabels(product: Product) {
     .filter(Boolean);
 }
 
+function normalizeColorName(value?: string | null) {
+  return (value ?? '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function pageItems(currentPage: number, totalPages: number) {
+  if (totalPages <= 7) {
+    return Array.from({ length: totalPages }, (_, index) => index + 1);
+  }
+
+  const pages: Array<number | 'dots-start' | 'dots-end'> = [1];
+  const start = Math.max(2, currentPage - 1);
+  const end = Math.min(totalPages - 1, currentPage + 1);
+
+  if (start > 2) pages.push('dots-start');
+  for (let page = start; page <= end; page += 1) pages.push(page);
+  if (end < totalPages - 1) pages.push('dots-end');
+  pages.push(totalPages);
+
+  return pages;
+}
+
 export default function CatalogScreen() {
   const { openNav } = useNav();
   const { user, token } = useAuthStore();
+  const router = useRouter();
+  const params = useLocalSearchParams<{ toneColors?: string; toneLabel?: string }>();
   const [products, setProducts] = useState<Product[]>([]);
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
   const [lookups, setLookups] = useState<Lookups>({
@@ -116,6 +143,10 @@ export default function CatalogScreen() {
   const [inStockOnly, setInStockOnly] = useState(true);
   const [sort, setSort] = useState<SortOption>('newest');
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [toneColorNames, setToneColorNames] = useState<string[]>([]);
+  const [toneLabel, setToneLabel] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [goToPage, setGoToPage] = useState('');
 
   const loadCatalog = useCallback(async () => {
     setError('');
@@ -185,6 +216,21 @@ export default function CatalogScreen() {
     }, [loadCatalog, loading]),
   );
 
+  useEffect(() => {
+    const toneColors = Array.isArray(params.toneColors) ? params.toneColors[0] : params.toneColors;
+    const nextToneLabel = Array.isArray(params.toneLabel) ? params.toneLabel[0] : params.toneLabel;
+
+    if (!toneColors) return;
+
+    setToneColorNames(
+      toneColors
+        .split('|')
+        .map((name: string) => name.trim())
+        .filter(Boolean),
+    );
+    setToneLabel(nextToneLabel ?? 'Skin Tone AI');
+  }, [params.toneColors, params.toneLabel]);
+
   const refresh = async () => {
     setRefreshing(true);
     try {
@@ -210,6 +256,7 @@ export default function CatalogScreen() {
     sizeLabel !== 'all',
     genderId !== 'all',
     colorFamilyId !== 'all',
+    toneColorNames.length > 0,
     !inStockOnly,
     sort !== 'newest',
   ].filter(Boolean).length;
@@ -217,6 +264,7 @@ export default function CatalogScreen() {
   const filteredProducts = useMemo(() => {
     const term = search.trim().toLowerCase();
     const selectedSize = sizeLabel === 'all' ? null : sizeLabel.toLowerCase();
+    const selectedToneColors = toneColorNames.map(normalizeColorName).filter(Boolean);
 
     const filtered = products.filter((product) => {
       const sizes = productSizeLabels(product).map((size) => size.toLowerCase());
@@ -234,6 +282,19 @@ export default function CatalogScreen() {
         .filter(Boolean)
         .join(' ')
         .toLowerCase();
+      const productColorNames = [product.colorName, product.color, product.colorFamily]
+        .map(normalizeColorName)
+        .filter(Boolean);
+      const matchesToneColors =
+        !selectedToneColors.length ||
+        selectedToneColors.some((toneColor) =>
+          productColorNames.some(
+            (productColor) =>
+              productColor === toneColor ||
+              productColor.includes(toneColor) ||
+              toneColor.includes(productColor),
+          ),
+        );
 
       return (
         (!term || text.includes(term)) &&
@@ -241,6 +302,7 @@ export default function CatalogScreen() {
         (!selectedSize || sizes.includes(selectedSize)) &&
         (genderId === 'all' || String(product.genderId) === String(genderId)) &&
         (colorFamilyId === 'all' || String(product.colorFamilyId) === String(colorFamilyId)) &&
+        matchesToneColors &&
         (!inStockOnly || product.qty > 0)
       );
     });
@@ -250,13 +312,42 @@ export default function CatalogScreen() {
       if (sort === 'priceHigh') return b.price - a.price;
       return 0;
     });
-  }, [categoryId, colorFamilyId, genderId, inStockOnly, products, search, sizeLabel, sort]);
+  }, [categoryId, colorFamilyId, genderId, inStockOnly, products, search, sizeLabel, sort, toneColorNames]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredProducts.length / PRODUCTS_PER_PAGE));
+  const pageStartIndex = (currentPage - 1) * PRODUCTS_PER_PAGE;
+  const pageEndIndex = pageStartIndex + PRODUCTS_PER_PAGE;
+  const visibleStart = filteredProducts.length ? pageStartIndex + 1 : 0;
+  const visibleEnd = Math.min(pageEndIndex, filteredProducts.length);
+
+  useEffect(() => {
+    setCurrentPage(1);
+    setGoToPage('');
+  }, [categoryId, colorFamilyId, genderId, inStockOnly, search, sizeLabel, sort, toneColorNames]);
+
+  useEffect(() => {
+    setCurrentPage((page) => Math.min(page, totalPages));
+  }, [totalPages]);
+
+  const moveToPage = (page: number) => {
+    const nextPage = Math.max(1, Math.min(totalPages, page));
+    setCurrentPage(nextPage);
+    setGoToPage('');
+  };
+
+  const submitGoToPage = () => {
+    const page = Number.parseInt(goToPage, 10);
+    if (Number.isNaN(page)) return;
+    moveToPage(page);
+  };
 
   const resetFilters = () => {
     setCategoryId('all');
     setSizeLabel('all');
     setGenderId('all');
     setColorFamilyId('all');
+    setToneColorNames([]);
+    setToneLabel('');
     setInStockOnly(true);
     setSort('newest');
   };
@@ -272,8 +363,9 @@ export default function CatalogScreen() {
   return (
     <View style={styles.screen}>
       <FlatList
-        data={filteredProducts}
+        data={filteredProducts.slice(pageStartIndex, pageEndIndex)}
         keyExtractor={(item) => item.id}
+        extraData={`${currentPage}-${filteredProducts.length}-${search}-${categoryId}-${sizeLabel}-${genderId}-${colorFamilyId}-${sort}-${inStockOnly}`}
         numColumns={2}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.list}
@@ -326,6 +418,57 @@ export default function CatalogScreen() {
               </TouchableOpacity>
             </View>
 
+            <TouchableOpacity
+              style={styles.toneCard}
+              onPress={() => router.push('/(tabs)/skin-tone')}
+              activeOpacity={0.82}
+            >
+              <View style={styles.toneIcon}>
+                <Ionicons name="color-palette-outline" size={22} color={Colors.white} />
+              </View>
+              <View style={styles.toneCopy}>
+                <Text style={styles.toneTitle}>
+                  {toneColorNames.length ? `${toneLabel || 'Skin Tone AI'} matches` : 'Skin Tone AI'}
+                </Text>
+                <Text style={styles.toneText} numberOfLines={1}>
+                  {toneColorNames.length
+                    ? toneColorNames.slice(0, 4).join(', ')
+                    : 'Analyze a photo to filter catalog colors'}
+                </Text>
+              </View>
+              {toneColorNames.length ? (
+                <TouchableOpacity
+                  style={styles.toneClearButton}
+                  onPress={(event: GestureResponderEvent) => {
+                    event.stopPropagation();
+                    setToneColorNames([]);
+                    setToneLabel('');
+                  }}
+                >
+                  <Ionicons name="close" size={18} color={Colors.text.primary} />
+                </TouchableOpacity>
+              ) : (
+                <Ionicons name="chevron-forward" size={20} color={Colors.text.secondary} />
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.mixCard}
+              onPress={() => router.push('/(tabs)/mix-match')}
+              activeOpacity={0.82}
+            >
+              <View style={styles.mixIcon}>
+                <Ionicons name="swap-horizontal-outline" size={22} color={Colors.white} />
+              </View>
+              <View style={styles.mixCopy}>
+                <Text style={styles.mixTitle}>Mix & Match</Text>
+                <Text style={styles.mixText} numberOfLines={1}>
+                  Pair tops and bottoms, then send the look to Try On
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={Colors.text.secondary} />
+            </TouchableOpacity>
+
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -348,7 +491,9 @@ export default function CatalogScreen() {
 
             <View style={styles.resultRow}>
               <Text style={styles.resultText}>
-                {filteredProducts.length} {filteredProducts.length === 1 ? 'item' : 'items'} available
+                {filteredProducts.length > PRODUCTS_PER_PAGE
+                  ? `Showing ${visibleStart}-${visibleEnd} of ${filteredProducts.length} items`
+                  : `${filteredProducts.length} ${filteredProducts.length === 1 ? 'item' : 'items'} available`}
               </Text>
               {error ? <Text style={styles.error}>{error}</Text> : null}
             </View>
@@ -361,11 +506,29 @@ export default function CatalogScreen() {
             <Text style={styles.emptyText}>Try another category, size, or search term.</Text>
           </View>
         }
+        ListFooterComponent={
+          filteredProducts.length > PRODUCTS_PER_PAGE ? (
+            <PaginationControls
+              currentPage={currentPage}
+              totalPages={totalPages}
+              goToPage={goToPage}
+              onGoToPageChange={setGoToPage}
+              onPageChange={moveToPage}
+              onSubmitGoToPage={submitGoToPage}
+            />
+          ) : null
+        }
         renderItem={({ item }) => (
           <ProductCard
             product={item}
             isSaved={savedIds.has(item.id)}
             onToggleSaved={() => toggleSaved(item.id)}
+            onTryOn={() =>
+              router.push({
+                pathname: '/(tabs)/try-on',
+                params: { productId: item.id },
+              })
+            }
           />
         )}
       />
@@ -390,14 +553,96 @@ export default function CatalogScreen() {
   );
 }
 
+function PaginationControls({
+  currentPage,
+  totalPages,
+  goToPage,
+  onGoToPageChange,
+  onPageChange,
+  onSubmitGoToPage,
+}: {
+  currentPage: number;
+  totalPages: number;
+  goToPage: string;
+  onGoToPageChange: (value: string) => void;
+  onPageChange: (page: number) => void;
+  onSubmitGoToPage: () => void;
+}) {
+  return (
+    <View style={styles.paginationWrap}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.paginationScroller}
+      >
+        <TouchableOpacity
+          style={[styles.pageArrow, currentPage === 1 && styles.pageDisabled]}
+          disabled={currentPage === 1}
+          onPress={() => onPageChange(currentPage - 1)}
+          activeOpacity={0.75}
+        >
+          <Ionicons name="chevron-back" size={24} color={Colors.white} />
+        </TouchableOpacity>
+
+        <View style={styles.pageNumberGroup}>
+          {pageItems(currentPage, totalPages).map((page) =>
+            typeof page === 'number' ? (
+              <TouchableOpacity
+                key={page}
+                style={[styles.pageNumber, page === currentPage && styles.pageNumberActive]}
+                onPress={() => onPageChange(page)}
+                activeOpacity={0.75}
+              >
+                <Text style={[styles.pageNumberText, page === currentPage && styles.pageNumberTextActive]}>
+                  {page}
+                </Text>
+              </TouchableOpacity>
+            ) : (
+              <Text key={page} style={styles.pageDots}>
+                ...
+              </Text>
+            ),
+          )}
+        </View>
+
+        <TouchableOpacity
+          style={[styles.pageArrow, currentPage === totalPages && styles.pageDisabled]}
+          disabled={currentPage === totalPages}
+          onPress={() => onPageChange(currentPage + 1)}
+          activeOpacity={0.75}
+        >
+          <Ionicons name="chevron-forward" size={24} color={Colors.white} />
+        </TouchableOpacity>
+
+        <Text style={styles.goLabel}>Go to page:</Text>
+        <TextInput
+          value={goToPage}
+          onChangeText={(value) => onGoToPageChange(value.replace(/[^0-9]/g, ''))}
+          keyboardType="number-pad"
+          placeholder={String(currentPage)}
+          placeholderTextColor={Colors.white}
+          style={styles.goInput}
+          returnKeyType="go"
+          onSubmitEditing={onSubmitGoToPage}
+        />
+        <TouchableOpacity style={styles.goButton} onPress={onSubmitGoToPage} activeOpacity={0.75}>
+          <Text style={styles.goButtonText}>GO</Text>
+        </TouchableOpacity>
+      </ScrollView>
+    </View>
+  );
+}
+
 function ProductCard({
   product,
   isSaved,
   onToggleSaved,
+  onTryOn,
 }: {
   product: Product;
   isSaved: boolean;
   onToggleSaved: () => void;
+  onTryOn: () => void;
 }) {
   const router = useRouter();
   const uri = imageUrl(product.imageUrl);
@@ -449,7 +694,14 @@ function ProductCard({
             {soldOut ? 'Sold out' : `${product.qty} in stock`}
           </Text>
         </View>
-        <TouchableOpacity style={[styles.tryOnButton, soldOut && styles.tryOnDisabled]} disabled={soldOut}>
+        <TouchableOpacity
+          style={[styles.tryOnButton, soldOut && styles.tryOnDisabled]}
+          disabled={soldOut}
+          onPress={(event: GestureResponderEvent) => {
+            event.stopPropagation();
+            onTryOn();
+          }}
+        >
           <Text style={styles.tryOnText}>TRY ON</Text>
         </TouchableOpacity>
       </View>
@@ -602,7 +854,7 @@ const styles = StyleSheet.create({
   },
   list: {
     paddingHorizontal: Spacing.md,
-    paddingTop: Spacing.md,
+    paddingTop: Spacing.xl,
     paddingBottom: Spacing['2xl'],
   },
   row: {
@@ -641,10 +893,96 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   menuButton: {
-    width: 42,
-    height: 42,
+    width: 48,
+    height: 48,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  paginationWrap: {
+    paddingTop: Spacing.sm,
+    paddingBottom: Spacing.lg,
+  },
+  paginationScroller: {
+    alignItems: 'center',
+    gap: Spacing.sm,
+    paddingRight: Spacing.md,
+  },
+  pageArrow: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#0B809A',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pageDisabled: {
+    opacity: 0.45,
+  },
+  pageNumberGroup: {
+    minHeight: 48,
+    borderRadius: Radius.full,
+    backgroundColor: 'rgba(148, 180, 190, 0.56)',
+    borderWidth: 1,
+    borderColor: 'rgba(232, 244, 255, 0.28)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    paddingHorizontal: Spacing.sm,
+  },
+  pageNumber: {
+    minWidth: 30,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pageNumberActive: {
+    backgroundColor: 'rgba(232, 244, 255, 0.24)',
+  },
+  pageNumberText: {
+    color: Colors.white,
+    fontSize: FontSize.base,
+    fontWeight: '900',
+  },
+  pageNumberTextActive: {
+    color: Colors.white,
+  },
+  pageDots: {
+    color: Colors.white,
+    fontSize: FontSize.base,
+    fontWeight: '900',
+    paddingHorizontal: Spacing.xs,
+  },
+  goLabel: {
+    color: Colors.white,
+    fontSize: FontSize.base,
+    fontWeight: '900',
+  },
+  goInput: {
+    width: 58,
+    height: 48,
+    borderRadius: Radius.full,
+    backgroundColor: 'rgba(148, 180, 190, 0.56)',
+    borderWidth: 1,
+    borderColor: 'rgba(232, 244, 255, 0.28)',
+    color: Colors.white,
+    fontSize: FontSize.lg,
+    fontWeight: '900',
+    textAlign: 'center',
+    paddingVertical: 0,
+  },
+  goButton: {
+    height: 48,
+    borderRadius: Radius.full,
+    backgroundColor: '#0B809A',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.md,
+  },
+  goButtonText: {
+    color: Colors.white,
+    fontSize: FontSize.base,
+    fontWeight: '900',
   },
   searchRow: {
     flexDirection: 'row',
@@ -704,6 +1042,80 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '900',
     overflow: 'hidden',
+  },
+  toneCard: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(14, 82, 101, 0.76)',
+    borderColor: 'rgba(96, 165, 250, 0.28)',
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: Spacing.sm,
+    marginBottom: Spacing.md,
+    minHeight: 58,
+    paddingHorizontal: Spacing.md,
+  },
+  toneIcon: {
+    alignItems: 'center',
+    backgroundColor: '#0B809A',
+    borderRadius: 16,
+    height: 32,
+    justifyContent: 'center',
+    width: 32,
+  },
+  toneCopy: {
+    flex: 1,
+  },
+  toneTitle: {
+    color: Colors.text.primary,
+    fontSize: FontSize.sm,
+    fontWeight: '900',
+  },
+  toneText: {
+    color: '#D6E7F6',
+    fontSize: FontSize.xs,
+    fontWeight: '700',
+    marginTop: 2,
+  },
+  toneClearButton: {
+    alignItems: 'center',
+    height: 34,
+    justifyContent: 'center',
+    width: 34,
+  },
+  mixCard: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(25, 66, 88, 0.82)',
+    borderColor: 'rgba(154, 233, 245, 0.28)',
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: Spacing.sm,
+    marginBottom: Spacing.md,
+    minHeight: 58,
+    paddingHorizontal: Spacing.md,
+  },
+  mixIcon: {
+    alignItems: 'center',
+    backgroundColor: '#126D84',
+    borderRadius: 16,
+    height: 32,
+    justifyContent: 'center',
+    width: 32,
+  },
+  mixCopy: {
+    flex: 1,
+  },
+  mixTitle: {
+    color: Colors.text.primary,
+    fontSize: FontSize.sm,
+    fontWeight: '900',
+  },
+  mixText: {
+    color: '#D6E7F6',
+    fontSize: FontSize.xs,
+    fontWeight: '700',
+    marginTop: 2,
   },
   tabs: {
     gap: Spacing.md,

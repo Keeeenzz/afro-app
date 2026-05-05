@@ -24,6 +24,7 @@ interface SideNavProps {
 
 const NAV_ITEMS = [
   { label: 'Home', icon: 'home-outline' as const, route: '/(tabs)/' },
+  { label: 'Skin Tone AI', icon: 'color-palette-outline' as const, route: '/(tabs)/skin-tone' },
   { label: 'Orders', icon: 'receipt-outline' as const, route: '/(tabs)/orders' },
   { label: 'Carts', icon: 'cart-outline' as const, route: '/(tabs)/cart' },
   { label: 'Messages', icon: 'chatbubble-outline' as const, route: '/(tabs)/messages' },

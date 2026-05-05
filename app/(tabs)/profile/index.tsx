@@ -7,7 +7,7 @@ import {
   ScrollView,
   TouchableOpacity,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuthStore } from '@/hooks/useAuthStore';
 import { Colors, FontSize, Radius, Spacing } from '@/constants/theme';
 import { InfoTab } from '@/components/profile/info';
@@ -21,6 +21,7 @@ type Tab = 'Info' | 'Orders' | 'Saved' | 'Style';
 export default function ProfileScreen() {
   const { user, token } = useAuthStore();
   const router = useRouter();
+  const params = useLocalSearchParams<{ tab?: string }>();
   const [activeTab, setActiveTab] = useState<Tab>('Info');
   const [summary, setSummary] = useState({ orders: 0, saved: 0, reviews: 0 });
   const tabs: Tab[] = ['Info', 'Orders', 'Saved', 'Style'];
@@ -37,6 +38,12 @@ export default function ProfileScreen() {
       .then(setSummary)
       .catch(() => setSummary({ orders: 0, saved: 0, reviews: 0 }));
   }, [activeTab, token, user?.user_id]);
+
+  useEffect(() => {
+    const tabParam = Array.isArray(params.tab) ? params.tab[0] : params.tab;
+    const matchingTab = tabs.find((tab) => tab.toLowerCase() === tabParam?.toLowerCase());
+    if (matchingTab) setActiveTab(matchingTab);
+  }, [params.tab]);
 
 return (
     <SafeAreaView style={styles.safe}>
