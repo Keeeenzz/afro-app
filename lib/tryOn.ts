@@ -9,6 +9,7 @@ type TryOnUploadOptions = {
   personUri: string;
   garmentUri: string;
   category?: string | null;
+  garmentPhotoType?: 'model' | 'flat-lay';
 };
 
 export type TryOnResult = {
@@ -95,7 +96,12 @@ export async function materializeTryOnImage(imageReference: string) {
   return imageReference;
 }
 
-export async function submitTryOn({ personUri, garmentUri, category }: TryOnUploadOptions) {
+export async function submitTryOn({
+  personUri,
+  garmentUri,
+  category,
+  garmentPhotoType = 'flat-lay',
+}: TryOnUploadOptions) {
   const form = new FormData();
   form.append('person_image', {
     uri: personUri,
@@ -108,6 +114,7 @@ export async function submitTryOn({ personUri, garmentUri, category }: TryOnUplo
     type: 'image/jpeg',
   } as unknown as Blob);
   form.append('category', category ?? 'auto');
+  form.append('garment_photo_type', garmentPhotoType);
 
   const response = await fetch(`${TRY_ON_API_BASE_URL}/v1/tryon/upload`, {
     method: 'POST',
