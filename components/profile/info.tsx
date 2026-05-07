@@ -14,6 +14,18 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { apiPatch } from '@/lib/api';
 
+function splitAddressParts(address?: string | null) {
+  const parts = (address ?? '').split(',').map((part) => part.trim());
+  return {
+    houseNo: parts[0] ?? '',
+    street: parts[1] ?? '',
+    barangay: parts[2] ?? '',
+    city: parts[3] ?? '',
+    province: parts[4] ?? '',
+    zip: parts[5] ?? '',
+  };
+}
+
 function InfoRow({
   icon,
   label,
@@ -38,6 +50,13 @@ export function InfoTab() {
   const [fullName, setFullName] = useState(user?.full_name ?? '');
   const [email, setEmail] = useState(user?.email ?? '');
   const [phone, setPhone] = useState(user?.phone ?? '');
+  const fallbackAddress = splitAddressParts(user?.shipping_address);
+  const [houseNo, setHouseNo] = useState(user?.address_house_no ?? fallbackAddress.houseNo);
+  const [street, setStreet] = useState(user?.address_street ?? fallbackAddress.street);
+  const [barangay, setBarangay] = useState(user?.address_barangay ?? fallbackAddress.barangay);
+  const [city, setCity] = useState(user?.address_city ?? fallbackAddress.city);
+  const [province, setProvince] = useState(user?.address_province ?? fallbackAddress.province);
+  const [zip, setZip] = useState(user?.address_zip ?? fallbackAddress.zip);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -45,7 +64,25 @@ export function InfoTab() {
     setFullName(user?.full_name ?? '');
     setEmail(user?.email ?? '');
     setPhone(user?.phone ?? '');
-  }, [user?.email, user?.full_name, user?.phone]);
+    const nextFallback = splitAddressParts(user?.shipping_address);
+    setHouseNo(user?.address_house_no ?? nextFallback.houseNo);
+    setStreet(user?.address_street ?? nextFallback.street);
+    setBarangay(user?.address_barangay ?? nextFallback.barangay);
+    setCity(user?.address_city ?? nextFallback.city);
+    setProvince(user?.address_province ?? nextFallback.province);
+    setZip(user?.address_zip ?? nextFallback.zip);
+  }, [
+    user?.address_barangay,
+    user?.address_city,
+    user?.address_house_no,
+    user?.address_province,
+    user?.address_street,
+    user?.address_zip,
+    user?.email,
+    user?.full_name,
+    user?.phone,
+    user?.shipping_address,
+  ]);
 
   const handleLogout = () => {
     logout();
@@ -62,6 +99,10 @@ export function InfoTab() {
 
     setError('');
     setLoading(true);
+    const shippingAddress = [houseNo, street, barangay, city, province, zip]
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .join(', ');
 
     try {
       const response = await apiPatch<{ user: any }>(
@@ -70,6 +111,13 @@ export function InfoTab() {
           full_name: fullName.trim(),
           email: email.trim(),
           phone: phone.trim() || null,
+          shipping_address: shippingAddress.trim() || null,
+          address_house_no: houseNo.trim() || null,
+          address_street: street.trim() || null,
+          address_barangay: barangay.trim() || null,
+          address_city: city.trim() || null,
+          address_province: province.trim() || null,
+          address_zip: zip.trim() || null,
         },
         token,
       );
@@ -86,6 +134,13 @@ export function InfoTab() {
     setFullName(user?.full_name ?? '');
     setEmail(user?.email ?? '');
     setPhone(user?.phone ?? '');
+    const nextFallback = splitAddressParts(user?.shipping_address);
+    setHouseNo(user?.address_house_no ?? nextFallback.houseNo);
+    setStreet(user?.address_street ?? nextFallback.street);
+    setBarangay(user?.address_barangay ?? nextFallback.barangay);
+    setCity(user?.address_city ?? nextFallback.city);
+    setProvince(user?.address_province ?? nextFallback.province);
+    setZip(user?.address_zip ?? nextFallback.zip);
     setError('');
     setIsEditing(false);
   };
@@ -123,6 +178,61 @@ export function InfoTab() {
             }}
             keyboardType="phone-pad"
           />
+          <Input
+            label="House Number / Unit"
+            value={houseNo}
+            onChangeText={(value) => {
+              setHouseNo(value);
+              setError('');
+            }}
+            autoCapitalize="words"
+          />
+          <Input
+            label="Street Name"
+            value={street}
+            onChangeText={(value) => {
+              setStreet(value);
+              setError('');
+            }}
+            autoCapitalize="words"
+          />
+          <Input
+            label="Barangay / Municipality"
+            value={barangay}
+            onChangeText={(value) => {
+              setBarangay(value);
+              setError('');
+            }}
+            autoCapitalize="words"
+          />
+          <Input
+            label="City"
+            value={city}
+            onChangeText={(value) => {
+              setCity(value);
+              setError('');
+            }}
+            autoCapitalize="words"
+          />
+          <Input
+            label="Province"
+            value={province}
+            onChangeText={(value) => {
+              setProvince(value);
+              setError('');
+            }}
+            autoCapitalize="words"
+          />
+          <Input
+            label="Zip Code"
+            value={zip}
+            onChangeText={(value) => {
+              setZip(value);
+              setError('');
+            }}
+            keyboardType="number-pad"
+            autoCapitalize="words"
+          />
           {error ? <Text style={styles.error}>{error}</Text> : null}
           <View style={styles.editActions}>
             <Button
@@ -148,7 +258,7 @@ export function InfoTab() {
               icon="call-outline"
               label={user?.phone ? `+63 ${user.phone}` : '-'}
             />
-            <InfoRow icon="location-outline" label="Manila" last />
+            <InfoRow icon="location-outline" label={user?.shipping_address || '-'} last />
           </View>
 
           <TouchableOpacity style={styles.editBtn} onPress={() => setIsEditing(true)}>

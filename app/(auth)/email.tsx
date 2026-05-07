@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,7 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
+  TouchableOpacity,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Button } from '@/components/ui/Button';
@@ -16,6 +17,9 @@ import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { StepIndicator } from '@/components/auth/StepIndicator';
 import { useAuthStore } from '@/hooks/useAuthStore';
 import { Colors, FontSize, Spacing } from '@/constants/theme';
+
+const EMAIL_MAX_LENGTH = 254;
+const OTP_EXPIRY = 4 * 60 + 14;
 
 export default function EmailPage() {
   const router = useRouter();
@@ -28,11 +32,37 @@ export default function EmailPage() {
   const [otp, setOtp] = useState('');
   const [otpError, setOtpError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [secondsLeft, setSecondsLeft] = useState(OTP_EXPIRY);
+  const [expired, setExpired] = useState(false);
+
+  useEffect(() => {
+    if (!otpSent || verified || expired) return;
+    if (secondsLeft <= 0) {
+      setExpired(true);
+      return;
+    }
+
+    const timer = setInterval(() => {
+      setSecondsLeft((seconds) => seconds - 1);
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [expired, otpSent, secondsLeft, verified]);
+
+  const formatTime = (secs: number) => {
+    const m = Math.floor(secs / 60).toString().padStart(2, '0');
+    const s = (secs % 60).toString().padStart(2, '0');
+    return `${m}:${s}`;
+  };
 
   const validateEmail = () => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!email || !emailRegex.test(email)) {
       setEmailError('Enter a valid email address.');
+      return false;
+    }
+    if (email.trim().length > EMAIL_MAX_LENGTH) {
+      setEmailError(`Email must be ${EMAIL_MAX_LENGTH} characters or less.`);
       return false;
     }
     setEmailError('');
@@ -46,6 +76,10 @@ export default function EmailPage() {
       // TODO: await api.post('/auth/send-email-otp', { email });
       await new Promise((r) => setTimeout(r, 800));
       setOtpSent(true);
+      setOtp('');
+      setOtpError('');
+      setExpired(false);
+      setSecondsLeft(OTP_EXPIRY);
     } catch {
       setEmailError('Failed to send code. Try again.');
     } finally {
@@ -54,6 +88,10 @@ export default function EmailPage() {
   };
 
   const handleVerifyOTP = async () => {
+    if (expired) {
+      setOtpError('Code has expired. Please request a new one.');
+      return;
+    }
     if (otp.length < 6) {
       setOtpError('Enter the complete 6-digit code.');
       return;
@@ -101,12 +139,16 @@ export default function EmailPage() {
             label="Email Address"
             placeholder="you@example.com"
             value={email}
-            onChangeText={setEmail}
+            onChangeText={(value) => {
+              setEmail(value.slice(0, EMAIL_MAX_LENGTH));
+              if (emailError) setEmailError('');
+            }}
             error={emailError}
             keyboardType="email-address"
             editable={!otpSent}
             rightIcon={verified ? 'checkmark-circle' : undefined}
             autoCapitalize="none"
+            maxLength={EMAIL_MAX_LENGTH}
           />
 
           {/* Step 1: send OTP */}
@@ -123,7 +165,25 @@ export default function EmailPage() {
           {otpSent && !verified && (
             <>
               <Text style={styles.otpLabel}>Enter verification code</Text>
-              <OTPInput length={6} value={otp} onChange={setOtp} />
+              <OTPInput length={6} value={otp} onChange={(value) => {
+                setOtp(value);
+                if (otpError) setOtpError('');
+              }} />
+              <View style={styles.codeMetaRow}>
+                {!expired ? (
+                  <Text style={[styles.timer, secondsLeft <= 30 && styles.timerUrgent]}>
+                    {formatTime(secondsLeft)}
+                  </Text>
+                ) : (
+                  <Text style={styles.expiredText}>Code expired</Text>
+                )}
+                <TouchableOpacity onPress={handleSendOTP}>
+                  <Text style={styles.resendText}>
+                    Didn't get a code?{' '}
+                    <Text style={styles.resendLink}>Resend</Text>
+                  </Text>
+                </TouchableOpacity>
+              </View>
               {otpError ? (
                 <Text style={styles.error}>{otpError}</Text>
               ) : null}
@@ -170,5 +230,28 @@ const styles = StyleSheet.create({
     fontSize: FontSize.sm,
     marginTop: Spacing.sm,
   },
+  codeMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.md,
+    marginTop: Spacing.xs,
+    marginBottom: Spacing.xs,
+  },
+  timer: {
+    fontSize: FontSize.xs,
+    fontWeight: '600',
+    color: Colors.brand.blue,
+  },
+  timerUrgent: {
+    color: Colors.status.error,
+  },
+  expiredText: {
+    fontSize: FontSize.xs,
+    color: Colors.status.error,
+    fontWeight: '600',
+  },
+  resendText: { fontSize: FontSize.xs, color: Colors.text.secondary },
+  resendLink: { color: Colors.brand.blue, fontWeight: '600' },
   btn: { marginTop: Spacing.md },
 });

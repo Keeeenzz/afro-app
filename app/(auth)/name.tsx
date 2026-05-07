@@ -1,10 +1,7 @@
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import {
-  View,
-  Text,
   StyleSheet,
   SafeAreaView,
-  TextInput,
   ScrollView,
   KeyboardAvoidingView,
   Platform,
@@ -17,6 +14,11 @@ import { StepIndicator } from '@/components/auth/StepIndicator';
 import { useAuthStore } from '@/hooks/useAuthStore';
 import { Colors, Spacing } from '@/constants/theme';
 
+const NAME_MIN_LENGTH = 2;
+const NAME_MAX_LENGTH = 40;
+const ALIAS_MAX_LENGTH = 40;
+const NAME_PATTERN = /^[A-Za-z]+(?:[ '-][A-Za-z]+)*$/;
+
 export default function NamePage() {
   const router = useRouter();
   const setDraft = useAuthStore((s) => s.setDraft);
@@ -26,12 +28,37 @@ export default function NamePage() {
   const [alias, setAlias] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
 
+  const validateName = (value: string, label: string) => {
+    const trimmed = value.trim();
+    if (!trimmed) return `${label} is required.`;
+    if (trimmed.length < NAME_MIN_LENGTH) return `${label} must be at least ${NAME_MIN_LENGTH} characters.`;
+    if (trimmed.length > NAME_MAX_LENGTH) return `${label} must be ${NAME_MAX_LENGTH} characters or less.`;
+    if (!NAME_PATTERN.test(trimmed)) return `${label} can only contain letters.`;
+    return '';
+  };
+
   const validate = () => {
     const e: Record<string, string> = {};
-    if (!firstName.trim()) e.firstName = 'First name is required.';
-    if (!lastName.trim()) e.lastName = 'Last name is required.';
+    const firstNameError = validateName(firstName, 'First name');
+    const lastNameError = validateName(lastName, 'Last name');
+    if (firstNameError) e.firstName = firstNameError;
+    if (lastNameError) e.lastName = lastNameError;
+    if (alias.trim().length > ALIAS_MAX_LENGTH) e.alias = `Alias must be ${ALIAS_MAX_LENGTH} characters or less.`;
     setErrors(e);
     return Object.keys(e).length === 0;
+  };
+
+  const updateField = (field: 'firstName' | 'lastName' | 'alias', value: string) => {
+    const nextValue = field === 'alias' ? value.slice(0, ALIAS_MAX_LENGTH) : value.slice(0, NAME_MAX_LENGTH);
+    if (field === 'firstName') setFirstName(nextValue);
+    if (field === 'lastName') setLastName(nextValue);
+    if (field === 'alias') setAlias(nextValue);
+    setErrors((current) => {
+      if (!current[field]) return current;
+      const next = { ...current };
+      delete next[field];
+      return next;
+    });
   };
 
   const handleContinue = () => {
@@ -68,26 +95,30 @@ export default function NamePage() {
             label="First Name"
             placeholder="Enter your first name"
             value={firstName}
-            onChangeText={setFirstName}
+            onChangeText={(value) => updateField('firstName', value)}
             error={errors.firstName}
             autoCapitalize="words"
+            maxLength={NAME_MAX_LENGTH}
           />
 
           <Input
             label="Last Name"
             placeholder="Enter your last name"
             value={lastName}
-            onChangeText={setLastName}
+            onChangeText={(value) => updateField('lastName', value)}
             error={errors.lastName}
             autoCapitalize="words"
+            maxLength={NAME_MAX_LENGTH}
           />
 
           <Input
             label="Alias (optional)"
             placeholder="Nickname or preferred name"
             value={alias}
-            onChangeText={setAlias}
+            onChangeText={(value) => updateField('alias', value)}
+            error={errors.alias}
             autoCapitalize="words"
+            maxLength={ALIAS_MAX_LENGTH}
           />
 
           <Button

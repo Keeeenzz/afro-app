@@ -14,6 +14,16 @@ import { StepIndicator } from '@/components/auth/StepIndicator';
 import { useAuthStore } from '@/hooks/useAuthStore';
 import { Colors, Spacing } from '@/constants/theme';
 
+const FIELD_LIMITS = {
+  houseNo: { min: 1, max: 30, label: 'House number / unit' },
+  street: { min: 2, max: 80, label: 'Street name' },
+  barangay: { min: 2, max: 80, label: 'Barangay / municipality' },
+  city: { min: 2, max: 60, label: 'City' },
+  province: { min: 2, max: 60, label: 'Province' },
+  zip: { min: 4, max: 4, label: 'Zip code' },
+  landmark: { min: 0, max: 100, label: 'Landmark' },
+};
+
 export default function AddressPage() {
   const router = useRouter();
   const setDraft = useAuthStore((s) => s.setDraft);
@@ -29,14 +39,46 @@ export default function AddressPage() {
 
   const validate = () => {
     const e: Record<string, string> = {};
-    if (!houseNo.trim()) e.houseNo = 'Required.';
-    if (!street.trim()) e.street = 'Required.';
-    if (!barangay.trim()) e.barangay = 'Required.';
-    if (!city.trim()) e.city = 'Required.';
-    if (!province.trim()) e.province = 'Required.';
-    if (!zip.trim()) e.zip = 'Required.';
+    const values = { houseNo, street, barangay, city, province, zip, landmark };
+
+    Object.entries(FIELD_LIMITS).forEach(([field, rule]) => {
+      const value = values[field as keyof typeof values].trim();
+      if (rule.min > 0 && !value) {
+        e[field] = 'Required.';
+      } else if (value && value.length < rule.min) {
+        e[field] = `${rule.label} must be at least ${rule.min} characters.`;
+      } else if (value.length > rule.max) {
+        e[field] = `${rule.label} must be ${rule.max} characters or less.`;
+      }
+    });
+
+    if (zip.trim() && !/^\d{4}$/.test(zip.trim())) e.zip = 'Enter a valid 4-digit zip code.';
     setErrors(e);
     return Object.keys(e).length === 0;
+  };
+
+  const updateField = (field: keyof typeof FIELD_LIMITS, value: string) => {
+    const nextValue = field === 'zip'
+      ? value.replace(/\D/g, '').slice(0, FIELD_LIMITS.zip.max)
+      : value.slice(0, FIELD_LIMITS[field].max);
+
+    const setters = {
+      houseNo: setHouseNo,
+      street: setStreet,
+      barangay: setBarangay,
+      city: setCity,
+      province: setProvince,
+      zip: setZip,
+      landmark: setLandmark,
+    };
+
+    setters[field](nextValue);
+    setErrors((current) => {
+      if (!current[field]) return current;
+      const next = { ...current };
+      delete next[field];
+      return next;
+    });
   };
 
   const handleContinue = () => {
@@ -71,55 +113,62 @@ export default function AddressPage() {
             label="House Number / Unit"
             placeholder="e.g. Unit 2B or 112"
             value={houseNo}
-            onChangeText={setHouseNo}
+            onChangeText={(value) => updateField('houseNo', value)}
             error={errors.houseNo}
+            maxLength={FIELD_LIMITS.houseNo.max}
           />
           <Input
             label="Street Name"
             placeholder="e.g. Mabini Street"
             value={street}
-            onChangeText={setStreet}
+            onChangeText={(value) => updateField('street', value)}
             error={errors.street}
             autoCapitalize="words"
+            maxLength={FIELD_LIMITS.street.max}
           />
           <Input
             label="Barangay / Municipality"
             placeholder="e.g. Barangay San Lorenzo"
             value={barangay}
-            onChangeText={setBarangay}
+            onChangeText={(value) => updateField('barangay', value)}
             error={errors.barangay}
             autoCapitalize="words"
+            maxLength={FIELD_LIMITS.barangay.max}
           />
           <Input
             label="City"
             placeholder="e.g. Makati"
             value={city}
-            onChangeText={setCity}
+            onChangeText={(value) => updateField('city', value)}
             error={errors.city}
             autoCapitalize="words"
+            maxLength={FIELD_LIMITS.city.max}
           />
           <Input
             label="Province"
             placeholder="e.g. Metro Manila"
             value={province}
-            onChangeText={setProvince}
+            onChangeText={(value) => updateField('province', value)}
             error={errors.province}
             autoCapitalize="words"
+            maxLength={FIELD_LIMITS.province.max}
           />
           <Input
             label="Zip Code"
             placeholder="e.g. 1215"
             value={zip}
-            onChangeText={setZip}
+            onChangeText={(value) => updateField('zip', value)}
             error={errors.zip}
             keyboardType="number-pad"
+            maxLength={FIELD_LIMITS.zip.max}
           />
           <Input
             label="Landmark (optional)"
             placeholder="e.g. near Ayala Triangle"
             value={landmark}
-            onChangeText={setLandmark}
+            onChangeText={(value) => updateField('landmark', value)}
             autoCapitalize="sentences"
+            maxLength={FIELD_LIMITS.landmark.max}
           />
 
           <Button

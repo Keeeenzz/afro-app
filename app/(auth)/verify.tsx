@@ -91,17 +91,8 @@ export default function VerifyPage() {
 
         <ScreenHeader
           title="6-digit code"
-          subtitle={`Enter the code sent to +63 ${draft.phone ?? ''}${expired ? '' : `. This expires in`}`}
+          subtitle={`Enter the code sent to +63 ${draft.phone ?? ''}`}
         />
-
-        {/* Timer */}
-        {!expired ? (
-          <Text style={[styles.timer, secondsLeft <= 30 && styles.timerUrgent]}>
-            {formatTime(secondsLeft)}
-          </Text>
-        ) : (
-          <Text style={styles.expiredText}>Code expired</Text>
-        )}
 
         {/* OTP boxes */}
         <View style={styles.otpRow}>
@@ -124,6 +115,22 @@ export default function VerifyPage() {
           })}
         </View>
 
+        <View style={styles.codeMetaRow}>
+          {!expired ? (
+            <Text style={[styles.timer, secondsLeft <= 30 && styles.timerUrgent]}>
+              {formatTime(secondsLeft)}
+            </Text>
+          ) : (
+            <Text style={styles.expiredText}>Code expired</Text>
+          )}
+          <TouchableOpacity onPress={handleResend}>
+            <Text style={styles.resendText}>
+              Didn't get a code?{' '}
+              <Text style={styles.resendLink}>Resend</Text>
+            </Text>
+          </TouchableOpacity>
+        </View>
+
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
         <Button
@@ -133,14 +140,6 @@ export default function VerifyPage() {
           disabled={expired || otp.length < 6}
           style={styles.btn}
         />
-
-        {/* Resend */}
-        <TouchableOpacity onPress={handleResend} style={styles.resendRow}>
-          <Text style={styles.resendText}>
-            Didn't get a code?{' '}
-            <Text style={styles.resendLink}>Resend</Text>
-          </Text>
-        </TouchableOpacity>
 
         <TouchableOpacity
           onPress={() => router.push('/(auth)/login')}
@@ -166,10 +165,9 @@ const styles = StyleSheet.create({
     paddingTop: Spacing.xl,
   },
   timer: {
-    fontSize: FontSize.lg,
-    fontWeight: '700',
+    fontSize: FontSize.xs,
+    fontWeight: '600',
     color: Colors.brand.blue,
-    marginBottom: Spacing.md,
   },
   timerUrgent: {
     color: Colors.status.error,
@@ -177,12 +175,18 @@ const styles = StyleSheet.create({
   expiredText: {
     fontSize: FontSize.sm,
     color: Colors.status.error,
-    marginBottom: Spacing.md,
     fontWeight: '600',
   },
   otpRow: {
     flexDirection: 'row',
     gap: 8,
+    marginBottom: Spacing.xs,
+  },
+  codeMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.md,
     marginBottom: Spacing.md,
   },
   otpBox: {
@@ -218,6 +222,6 @@ const styles = StyleSheet.create({
   },
   btn: { marginTop: Spacing.sm },
   resendRow: { marginTop: Spacing.md, alignItems: 'center' },
-  resendText: { fontSize: FontSize.sm, color: Colors.text.secondary },
+  resendText: { fontSize: FontSize.xs, color: Colors.text.secondary },
   resendLink: { color: Colors.brand.blue, fontWeight: '600' },
 });

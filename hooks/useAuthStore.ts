@@ -7,6 +7,13 @@ export interface AuthUser {
   phone?: string;
   is_admin: boolean;
   profile_photo_url?: string;
+  shipping_address?: string | null;
+  address_house_no?: string | null;
+  address_street?: string | null;
+  address_barangay?: string | null;
+  address_city?: string | null;
+  address_province?: string | null;
+  address_zip?: string | null;
   idNumber?: string | null;
   id_number?: string | null;
   fashion_style?: string | null;

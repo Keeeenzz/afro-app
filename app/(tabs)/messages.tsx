@@ -23,6 +23,8 @@ type ChatMessage = {
   from: 'admin' | 'customer';
   text: string;
   time: string;
+  isRead?: boolean;
+  readAt?: string;
 };
 
 type ChatProduct = {
@@ -244,7 +246,10 @@ export default function MessagesScreen() {
                   {!fromCustomer ? <Avatar /> : null}
                   <View style={[styles.messageBubble, fromCustomer ? styles.customerBubble : styles.adminBubble]}>
                     <Text style={styles.messageText}>{message.text}</Text>
-                    <Text style={[styles.messageTime, fromCustomer && styles.customerTime]}>{message.time}</Text>
+                    <Text style={[styles.messageTime, fromCustomer && styles.customerTime]}>
+                      {message.time}
+                      {fromCustomer ? `  ${message.isRead ? `Read at ${message.readAt || message.time}` : 'Delivered'}` : ''}
+                    </Text>
                   </View>
                 </View>
               );
@@ -411,7 +416,7 @@ const styles = StyleSheet.create({
     flex: 1,
     color: Colors.text.primary,
     fontSize: FontSize.sm,
-    fontWeight: '800',
+    fontWeight: '500',
     minHeight: 38,
   },
   filterButton: {
@@ -446,7 +451,7 @@ const styles = StyleSheet.create({
   filterText: {
     color: Colors.text.secondary,
     fontSize: FontSize.sm,
-    fontWeight: '800',
+    fontWeight: '500',
   },
   filterTextActive: {
     color: Colors.text.primary,
@@ -461,7 +466,7 @@ const styles = StyleSheet.create({
   listHeading: {
     color: '#EAF6FF',
     fontSize: FontSize.xs,
-    fontWeight: '900',
+    fontWeight: '600',
     marginBottom: Spacing.sm,
   },
   conversationItem: {
@@ -486,12 +491,12 @@ const styles = StyleSheet.create({
   conversationName: {
     color: Colors.text.primary,
     fontSize: FontSize.sm,
-    fontWeight: '900',
+    fontWeight: '600',
   },
   conversationPreview: {
     color: '#DCEBFA',
     fontSize: FontSize.xs,
-    fontWeight: '700',
+    fontWeight: '400',
     marginTop: 3,
   },
   conversationMeta: {
@@ -501,7 +506,7 @@ const styles = StyleSheet.create({
   conversationTime: {
     color: Colors.text.secondary,
     fontSize: FontSize.xs,
-    fontWeight: '700',
+    fontWeight: '400',
   },
   unreadDot: {
     width: 8,
@@ -584,12 +589,12 @@ const styles = StyleSheet.create({
   supportName: {
     color: Colors.text.primary,
     fontSize: FontSize.sm,
-    fontWeight: '900',
+    fontWeight: '600',
   },
   supportStatus: {
     color: Colors.status.success,
     fontSize: 9,
-    fontWeight: '800',
+    fontWeight: '500',
     marginTop: 2,
   },
   productCard: {
@@ -623,18 +628,18 @@ const styles = StyleSheet.create({
   productName: {
     color: Colors.text.primary,
     fontSize: FontSize.sm,
-    fontWeight: '900',
+    fontWeight: '600',
   },
   productPrice: {
     color: '#AEE4FF',
     fontSize: FontSize.xs,
-    fontWeight: '900',
+    fontWeight: '600',
     marginTop: 2,
   },
   productOrder: {
     color: Colors.text.secondary,
     fontSize: 9,
-    fontWeight: '700',
+    fontWeight: '400',
     marginTop: 2,
   },
   buyButton: {
@@ -648,7 +653,7 @@ const styles = StyleSheet.create({
   buyText: {
     color: Colors.text.primary,
     fontSize: FontSize.xs,
-    fontWeight: '900',
+    fontWeight: '600',
   },
   messages: {
     flex: 1,
@@ -663,7 +668,7 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     color: '#D5E8F8',
     fontSize: FontSize.xs,
-    fontWeight: '900',
+    fontWeight: '500',
     marginBottom: Spacing.sm,
   },
   messageRow: {
@@ -692,13 +697,13 @@ const styles = StyleSheet.create({
   messageText: {
     color: Colors.text.primary,
     fontSize: FontSize.xs,
-    fontWeight: '700',
+    fontWeight: '400',
     lineHeight: 17,
   },
   messageTime: {
     color: '#E5F3FF',
     fontSize: 9,
-    fontWeight: '800',
+    fontWeight: '400',
     marginTop: Spacing.xs,
   },
   customerTime: {
@@ -738,7 +743,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.md,
     paddingVertical: Platform.OS === 'ios' ? 10 : 6,
     fontSize: FontSize.sm,
-    fontWeight: '800',
+    fontWeight: '400',
   },
   sendButton: {
     width: 42,

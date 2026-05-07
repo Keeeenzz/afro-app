@@ -9,7 +9,6 @@ import {
   Alert,
   Animated,
   Image,
-  Pressable,
   SafeAreaView,
   ScrollView,
   StyleSheet,
@@ -34,6 +33,7 @@ import { useAuthStore } from '@/hooks/useAuthStore';
 import { useNav } from '@/context/NavContext';
 
 type TryOnPhase = 'upload' | 'generating' | 'result';
+type PhotoGuideMode = 'full' | 'top';
 
 type Product = {
   id: string;
@@ -103,6 +103,21 @@ type ReferenceComparison = {
   penalty: number;
 };
 
+function reportLines(text: string) {
+  return text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function splitLabelValue(line: string) {
+  const [label, ...rest] = line.split(':');
+  return {
+    label: label?.trim() ?? '',
+    value: rest.join(':').trim(),
+  };
+}
+
 function peso(value: number) {
   return `PHP ${Number(value ?? 0).toLocaleString('en-PH', { maximumFractionDigits: 0 })}`;
 }
@@ -143,6 +158,33 @@ function measurementMetric(name: string): BodyMetric | null {
   if (normalized.includes('inseam')) return 'inseam';
 
   return null;
+}
+
+function garmentMetricScope(product: Product) {
+  const text = `${product.categorySlug ?? ''} ${product.category ?? ''} ${product.measurements?.[0]?.garmentType ?? ''}`.toLowerCase();
+
+  if (text.includes('bottom') || text.includes('pant') || text.includes('short') || text.includes('skirt')) {
+    return new Set<BodyMetric>(['waist', 'hip']);
+  }
+
+  return new Set<BodyMetric>(['chest', 'waist', 'hip']);
+}
+
+function garmentMetricLabel(product: Product) {
+  const metrics = [...garmentMetricScope(product)];
+  if (metrics.includes('chest')) return 'chest, waist, and hip/seat';
+  return 'waist and hip/seat';
+}
+
+function issueLabel(items: { label: string; penalty: number }[]) {
+  const issueLabels = items
+    .filter((item) => item.penalty > 0)
+    .map((item) => item.label.toLowerCase());
+
+  if (!issueLabels.length) return '';
+  if (issueLabels.length === 1) return issueLabels[0];
+  if (issueLabels.length === 2) return `${issueLabels[0]} and ${issueLabels[1]}`;
+  return `${issueLabels.slice(0, -1).join(', ')}, and ${issueLabels[issueLabels.length - 1]}`;
 }
 
 function toNullableNumber(value: string) {
@@ -235,12 +277,20 @@ function referenceRanges(product: Product) {
 
   if (!reference) return [];
 
+  const allowedMetrics = garmentMetricScope(product);
+
   return [
     { metric: 'chest' as const, label: 'Chest', min: reference.chestCmMin, max: reference.chestCmMax },
     { metric: 'waist' as const, label: 'Waist', min: reference.waistCmMin, max: reference.waistCmMax },
     { metric: 'hip' as const, label: 'Hip/Seat', min: reference.hipCmMin, max: reference.hipCmMax },
-    { metric: 'inseam' as const, label: 'Height estimate', min: reference.heightCmMin, max: reference.heightCmMax },
-  ].filter((item) => item.min !== null && item.min !== undefined && item.max !== null && item.max !== undefined);
+  ].filter(
+    (item) =>
+      allowedMetrics.has(item.metric) &&
+      item.min !== null &&
+      item.min !== undefined &&
+      item.max !== null &&
+      item.max !== undefined,
+  );
 }
 
 function referenceSummary(product: Product) {
@@ -278,7 +328,7 @@ function buildSizeReferenceFitReport(
         maxCm,
         status: 'Likely too loose',
         penalty: belowCm > 12 ? 26 : 14,
-        message: `${range.label} is ${belowCm.toFixed(1)} cm below the size ${product.sizeReference?.label ?? product.size ?? ''} body reference.`,
+        message: `${range.label} is ${belowCm.toFixed(1)} cm below the size ${product.sizeReference?.label ?? product.size ?? ''} product measurement range.`,
       });
       return items;
     }
@@ -291,7 +341,7 @@ function buildSizeReferenceFitReport(
         maxCm,
         status: 'Likely too tight',
         penalty: aboveCm > 8 ? 28 : 16,
-        message: `${range.label} is ${aboveCm.toFixed(1)} cm above the size ${product.sizeReference?.label ?? product.size ?? ''} body reference.`,
+        message: `${range.label} is ${aboveCm.toFixed(1)} cm above the size ${product.sizeReference?.label ?? product.size ?? ''} product measurement range.`,
       });
       return items;
     }
@@ -303,7 +353,7 @@ function buildSizeReferenceFitReport(
       maxCm,
       status: 'Good fit',
       penalty: 0,
-        message: 'The try-on body measurement sits within the selected size reference.',
+        message: 'The try-on body measurement sits within the selected product measurement range.',
     });
     return items;
   }, []);
@@ -316,9 +366,10 @@ function buildSizeReferenceFitReport(
     .sort((a, b) => b.penalty - a.penalty)[0];
   const title = strongestIssue ? strongestIssue.status : 'Likely good fit';
   const sizeLabel = product.sizeReference?.label ?? product.size?.split(',')[0]?.trim() ?? 'Not set';
+  const issueArea = issueLabel(comparisons);
   const summary = strongestIssue
-    ? `${product.name} size ${sizeLabel} is ${strongestIssue.status.toLowerCase()} around ${strongestIssue.label.toLowerCase()} based on the admin body reference.`
-    : `${product.name} size ${sizeLabel} matches the try-on body measurements based on the admin body reference.`;
+    ? `${product.name} size ${sizeLabel} is ${strongestIssue.status.toLowerCase()} around ${issueArea} based on the product measurements.`
+    : `${product.name} size ${sizeLabel} matches the try-on body measurements based on the product measurements.`;
 
   const details = comparisons.flatMap((item) => [
     `${item.label}: ${item.status}`,
@@ -332,7 +383,8 @@ function buildSizeReferenceFitReport(
     `Product: ${product.name}`,
     `Static garment type: ${product.category ?? 'Not set'}`,
     `Static product size: ${sizeLabel}`,
-    `Body reference: ${referenceSummary(product)}`,
+    `Product measurements: ${referenceSummary(product)}`,
+    `Measured areas: ${garmentMetricLabel(product)}`,
     '',
     ...details,
   ].join('\n');
@@ -363,9 +415,15 @@ function buildMeasurementFitReport(
       .join('\n');
   }
 
-  const comparisons = measurements.reduce<FitComparison[]>((items, measurement) => {
+  const allowedMetrics = garmentMetricScope(product);
+  const scopedMeasurements = measurements.filter((measurement) => {
     const metric = measurementMetric(measurement.measurementName);
-    if (!metric) return items;
+    return metric ? allowedMetrics.has(metric) : false;
+  });
+
+  const comparisons = scopedMeasurements.reduce<FitComparison[]>((items, measurement) => {
+    const metric = measurementMetric(measurement.measurementName);
+    if (!metric || !allowedMetrics.has(metric)) return items;
 
     const userCm = userMetricCm(metric, bodyProfile);
     if (!userCm) return items;
@@ -390,8 +448,8 @@ function buildMeasurementFitReport(
   if (!comparisons.length) {
     return [
       'Fit data incomplete',
-      `${product.name} has product measurements, but none match the try-on body fields yet.`,
-      'Supported comparisons include chest/bust, waist, hip/seat, and inseam.',
+      `${product.name} has product measurements, but none match the needed ${garmentMetricLabel(product)} fields yet.`,
+      `Supported comparisons for this garment include ${garmentMetricLabel(product)}.`,
       `Product measurements: ${measurementSummary(measurements)}`,
     ].join('\n');
   }
@@ -401,10 +459,11 @@ function buildMeasurementFitReport(
     .filter((item) => item.penalty > 0)
     .sort((a, b) => b.penalty - a.penalty)[0];
   const title = strongestIssue ? strongestIssue.status : 'Likely good fit';
-  const sizeLabel = measurements[0]?.sizeLabel ?? product.size?.split(',')[0]?.trim() ?? 'Not set';
-  const garmentType = measurements[0]?.garmentType ?? product.category ?? 'Not set';
+  const sizeLabel = scopedMeasurements[0]?.sizeLabel ?? product.size?.split(',')[0]?.trim() ?? 'Not set';
+  const garmentType = scopedMeasurements[0]?.garmentType ?? product.category ?? 'Not set';
+  const issueArea = issueLabel(comparisons);
   const summary = strongestIssue
-    ? `${product.name} size ${sizeLabel} is ${strongestIssue.status.toLowerCase()} around ${strongestIssue.label.toLowerCase()} and may need fit attention.`
+    ? `${product.name} size ${sizeLabel} is ${strongestIssue.status.toLowerCase()} around ${issueArea} based on the product measurements.`
     : `${product.name} size ${sizeLabel} looks close to the try-on body measurements.`;
 
   const detailLines = comparisons.flatMap((item) => {
@@ -423,7 +482,8 @@ function buildMeasurementFitReport(
     `Product: ${product.name}`,
     `Static garment type: ${garmentType}`,
     `Static product size: ${sizeLabel}`,
-    `Product measurements: ${measurementSummary(measurements)}`,
+    `Product measurements: ${measurementSummary(scopedMeasurements)}`,
+    `Measured areas: ${garmentMetricLabel(product)}`,
     '',
     ...detailLines,
   ];
@@ -454,6 +514,131 @@ function BulletText({ text }: { text: string }) {
     <View style={styles.bulletRow}>
       <View style={styles.bulletDot} />
       <Text style={styles.boxText}>{text}</Text>
+    </View>
+  );
+}
+
+function FitReport({
+  text,
+  products = [],
+  bodyProfile,
+}: {
+  text: string;
+  products?: Product[];
+  bodyProfile?: BodyProfile | null;
+}) {
+  const [reportIndex, setReportIndex] = useState(0);
+  const reports = products.length
+    ? products.map((product) => ({
+        product,
+        text: buildMeasurementFitReport(product, bodyProfile ?? null),
+      }))
+    : [{ product: null, text }];
+  const activeIndex = Math.min(reportIndex, reports.length - 1);
+  const activeReport = reports[activeIndex];
+  const lines = reportLines(activeReport.text);
+  const [headline, summary, ...details] = lines;
+  const product = details.find((line) => line.startsWith('Product:'));
+  const garmentType = details.find((line) => line.startsWith('Static garment type:'));
+  const productSize = details.find((line) => line.startsWith('Static product size:'));
+  const measurements = details.find((line) => line.startsWith('Product measurements:'));
+  const comparisonLines = details.filter(
+    (line) =>
+      !line.startsWith('Product:') &&
+      !line.startsWith('Static garment type:') &&
+      !line.startsWith('Static product size:') &&
+      !line.startsWith('Product measurements:') &&
+      !line.startsWith('Measured areas:'),
+  );
+  const sections = comparisonLines.reduce<{ title: string; reasons: string[] }[]>((items, line) => {
+    if (!line.toLowerCase().startsWith('user ') && line.includes(':')) {
+      const parsed = splitLabelValue(line);
+      items.push({ title: `${parsed.label}: ${parsed.value}`, reasons: [] });
+      return items;
+    }
+
+    const current = items[items.length - 1];
+    if (current) {
+      current.reasons.push(line);
+    }
+    return items;
+  }, []);
+  const metaItems = [product, garmentType, productSize]
+    .filter((item): item is string => !!item)
+    .map(splitLabelValue);
+  const measurementValue = measurements ? splitLabelValue(measurements).value : '';
+  const canGoBack = activeIndex > 0;
+  const canGoNext = activeIndex < reports.length - 1;
+  const activeName = activeReport.product?.name ?? splitLabelValue(product ?? '').value ?? 'Report';
+
+  useEffect(() => {
+    if (reportIndex > reports.length - 1) {
+      setReportIndex(Math.max(0, reports.length - 1));
+    }
+  }, [reportIndex, reports.length]);
+
+  return (
+    <View style={styles.reportBox}>
+      <View style={styles.reportHeader}>
+        <Text style={styles.boxTitle}>Fit report</Text>
+        <View style={styles.reportPager}>
+          <TouchableOpacity
+            style={[styles.reportPagerButton, !canGoBack && styles.reportPagerButtonDisabled]}
+            onPress={() => setReportIndex((index) => Math.max(0, index - 1))}
+            disabled={!canGoBack}
+            activeOpacity={0.72}
+          >
+            <Ionicons name="chevron-back" size={17} color={Colors.text.primary} />
+          </TouchableOpacity>
+          <Text style={styles.reportScore}>
+            Item {activeIndex + 1}: {activeName || 'Report'}
+          </Text>
+          <TouchableOpacity
+            style={[styles.reportPagerButton, !canGoNext && styles.reportPagerButtonDisabled]}
+            onPress={() => setReportIndex((index) => Math.min(reports.length - 1, index + 1))}
+            disabled={!canGoNext}
+            activeOpacity={0.72}
+          >
+            <Ionicons name="chevron-forward" size={17} color={Colors.text.primary} />
+          </TouchableOpacity>
+        </View>
+      </View>
+      {headline ? <Text style={styles.reportHeadline}>{headline}</Text> : null}
+      {summary ? <Text style={styles.reportSummary}>{summary}</Text> : null}
+
+      {metaItems.length ? (
+        <View style={styles.reportMetaRow}>
+          {metaItems.map((item) => (
+            <Text key={item.label} style={styles.reportMetaText}>
+              <Text style={styles.reportMetaLabel}>{item.label}: </Text>
+              {item.value}
+            </Text>
+          ))}
+        </View>
+      ) : null}
+
+      {measurementValue ? (
+        <View style={styles.reportMeasurements}>
+          <Text style={styles.reportMeasurementsTitle}>Product Measurements</Text>
+          <Text style={styles.reportMeasurementsText}>{measurementValue}</Text>
+        </View>
+      ) : null}
+
+      {sections.length ? (
+        <View style={styles.reportSections}>
+          {sections.map((section, index) => (
+            <View key={`${section.title}-${index}`} style={styles.reportSection}>
+              <Text style={styles.reportSectionTitle}>{section.title}</Text>
+              {section.reasons.length ? <Text style={styles.reportReasonLabel}>Reason:</Text> : null}
+              {section.reasons.map((reason, reasonIndex) => (
+                <Text key={`${section.title}-reason-${reasonIndex}`} style={styles.reportReasonText}>
+                  {reason}
+                </Text>
+              ))}
+            </View>
+          ))}
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -498,10 +683,13 @@ export default function TryOnScreen() {
   const [generating, setGenerating] = useState(false);
   const [savingImage, setSavingImage] = useState(false);
   const [error, setError] = useState('');
+  const [photoGuideMode, setPhotoGuideMode] = useState<PhotoGuideMode>('full');
   const [sessionChestCm, setSessionChestCm] = useState('');
   const [sessionWaistCm, setSessionWaistCm] = useState('');
   const [sessionHipCm, setSessionHipCm] = useState('');
   const [sessionHeightCm, setSessionHeightCm] = useState('');
+  const [generationProgress, setGenerationProgress] = useState(0);
+  const [portraitAspectRatio, setPortraitAspectRatio] = useState(1);
   const loadingDotScales = useRef([new Animated.Value(1), new Animated.Value(1), new Animated.Value(1)]).current;
 
   const hydrateProduct = async (product: Product | null) => {
@@ -551,6 +739,15 @@ export default function TryOnScreen() {
         .map((id) => id.trim())
         .filter(Boolean)
         .slice(0, 2);
+
+      if (requestedProductIds.length) {
+        setPhase('upload');
+        setTryOnResult(null);
+        setDisplayResultUri('');
+        setPersonUri('');
+        setGenerationProgress(0);
+      }
+
       const [allProducts, saved] = await Promise.all([
         apiGet<Product[]>('/products'),
         user?.user_id ? apiGet<Product[]>(`/saved/${user.user_id}`, token) : Promise.resolve([]),
@@ -622,6 +819,21 @@ export default function TryOnScreen() {
     return () => animation.stop();
   }, [loadingDotScales, phase]);
 
+  useEffect(() => {
+    if (phase !== 'generating') return;
+
+    setGenerationProgress((current) => (current > 0 ? current : 5));
+    const interval = setInterval(() => {
+      setGenerationProgress((current) => {
+        if (current >= 94) return current;
+        const increment = current < 50 ? 7 : current < 80 ? 4 : 2;
+        return Math.min(94, current + increment);
+      });
+    }, 700);
+
+    return () => clearInterval(interval);
+  }, [phase]);
+
   const mightLike = useMemo(() => {
     const tokens = styleTokens(user?.fashion_style);
 
@@ -647,7 +859,30 @@ export default function TryOnScreen() {
     body_hip_cm: toNullableNumber(sessionHipCm),
     body_height_cm: toNullableNumber(sessionHeightCm),
   };
-  const aiReport = reportText(tryOnResult) || buildOutfitFitReport(selectedProducts, sessionBodyProfile);
+  const aiReport = (reportText(tryOnResult) || buildOutfitFitReport(selectedProducts, sessionBodyProfile)).replace(
+    /based on the admin body reference/gi,
+    'based on the product measurements',
+  );
+
+  const selectedOnlyTops = selectedProducts.length > 0 && selectedProducts.every((product) => (
+    tryOnCategory(product.category, product.categorySlug) === 'tops'
+  ));
+
+  const processPortrait = async (uri: string) => {
+    const image = await ImageManipulator.manipulateAsync(
+      uri,
+      [{ resize: { width: 900 } }],
+      { compress: 0.9, format: ImageManipulator.SaveFormat.JPEG },
+    );
+
+    setPersonUri(image.uri);
+    Image.getSize(
+      image.uri,
+      (width, height) => setPortraitAspectRatio(Math.min(1.45, Math.max(0.62, width / height))),
+      () => setPortraitAspectRatio(1),
+    );
+    setError('');
+  };
 
   const pickPortrait = async () => {
     try {
@@ -658,16 +893,32 @@ export default function TryOnScreen() {
 
       if (pickerResult.canceled) return;
 
-      const image = await ImageManipulator.manipulateAsync(
-        pickerResult.assets[0].uri,
-        [{ resize: { width: 900 } }],
-        { compress: 0.9, format: ImageManipulator.SaveFormat.JPEG },
-      );
-
-      setPersonUri(image.uri);
-      setError('');
+      await processPortrait(pickerResult.assets[0].uri);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not upload portrait.');
+    }
+  };
+
+  const takePortrait = async () => {
+    try {
+      const permission = await ImagePicker.requestCameraPermissionsAsync();
+
+      if (!permission.granted) {
+        Alert.alert('Camera permission needed', 'Allow camera access to take a try-on photo.');
+        return;
+      }
+
+      const cameraResult = await ImagePicker.launchCameraAsync({
+        base64: false,
+        cameraType: ImagePicker.CameraType.front,
+        quality: 1,
+      });
+
+      if (cameraResult.canceled) return;
+
+      await processPortrait(cameraResult.assets[0].uri);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not open camera.');
     }
   };
 
@@ -691,6 +942,7 @@ export default function TryOnScreen() {
 
     setGenerating(true);
     setPhase('generating');
+    setGenerationProgress(5);
     setError('');
 
     try {
@@ -698,9 +950,10 @@ export default function TryOnScreen() {
       let finalResult: TryOnResult | null = null;
       let finalResultUri = '';
 
-      for (const product of selectedProducts) {
+      for (const [index, product] of selectedProducts.entries()) {
         const rawGarmentUri = resolvedProductImageUri(product.imageUrl);
         const garmentUri = await cacheRemoteImage(rawGarmentUri, `tryon-${product.id}.jpg`);
+        setGenerationProgress(Math.max(12, Math.round((index / selectedProducts.length) * 70)));
         const result = await submitTryOn({
           personUri: currentPersonUri,
           garmentUri,
@@ -709,14 +962,17 @@ export default function TryOnScreen() {
         finalResultUri = await materializeTryOnImage(result.image ?? '');
         currentPersonUri = finalResultUri;
         finalResult = result;
+        setGenerationProgress(Math.round(((index + 1) / selectedProducts.length) * 92));
       }
 
       setTryOnResult(finalResult);
       setDisplayResultUri(finalResultUri);
+      setGenerationProgress(100);
       setPhase('result');
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Could not generate the try-on result.';
       setError(message);
+      setGenerationProgress(0);
       setPhase('upload');
       Alert.alert('Try-on failed', message);
     } finally {
@@ -782,35 +1038,85 @@ export default function TryOnScreen() {
 
           {phase === 'upload' ? (
             <>
-              <Pressable style={styles.uploadBox} onPress={pickPortrait}>
+              <View style={styles.guideTabs}>
+                <TouchableOpacity
+                  style={[styles.guideTab, photoGuideMode === 'full' && styles.guideTabActive]}
+                  onPress={() => setPhotoGuideMode('full')}
+                  activeOpacity={0.75}
+                >
+                  <Ionicons name="body-outline" size={15} color={Colors.text.primary} />
+                  <Text style={styles.guideTabText}>Full body</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.guideTab, photoGuideMode === 'top' && styles.guideTabActive]}
+                  onPress={() => setPhotoGuideMode('top')}
+                  activeOpacity={0.75}
+                >
+                  <Ionicons name="shirt-outline" size={15} color={Colors.text.primary} />
+                  <Text style={styles.guideTabText}>Top only</Text>
+                </TouchableOpacity>
+              </View>
+
+              <View
+                style={[
+                  styles.uploadBox,
+                  personUri && styles.uploadBoxFilled,
+                  personUri && { aspectRatio: portraitAspectRatio },
+                ]}
+              >
                 {personUri ? (
-                  <Image source={{ uri: personUri }} style={styles.uploadPreview} resizeMode="cover" />
+                  <Image source={{ uri: personUri }} style={styles.uploadPreview} resizeMode="contain" />
                 ) : (
                   <View style={styles.uploadEmpty}>
-                    <Ionicons name="image-outline" size={44} color="#D8EDFF" />
-                    <Text style={styles.uploadTitle}>Tap to upload your photo</Text>
-                    <Text style={styles.uploadText}>or choose from your gallery</Text>
-                    <View style={styles.uploadChips}>
-                      <Text style={styles.uploadChip}>Portrait</Text>
-                      <Text style={styles.uploadChip}>PNG/JPG</Text>
-                      <Text style={styles.uploadChip}>Max 10MB</Text>
+                    <View style={photoGuideMode === 'full' ? styles.bodyGuide : styles.topGuide}>
+                      <View style={styles.guideHead} />
+                      <View style={styles.guideShoulders} />
+                      <View style={photoGuideMode === 'full' ? styles.guideTorso : styles.guideTorsoShort} />
+                      {photoGuideMode === 'full' ? (
+                        <View style={styles.guideLegs}>
+                          <View style={styles.guideLeg} />
+                          <View style={styles.guideLeg} />
+                        </View>
+                      ) : null}
                     </View>
+                    <Text style={styles.uploadTitle}>
+                      {photoGuideMode === 'full' ? 'Fit your whole body inside the guide' : 'Frame from head to waist'}
+                    </Text>
+                    <Text style={styles.uploadText}>
+                      {photoGuideMode === 'full'
+                        ? 'Best for dresses, bottoms, and full outfits.'
+                        : 'Half-body photos work best for tops only.'}
+                    </Text>
                   </View>
                 )}
-              </Pressable>
+              </View>
+
+              <View style={styles.photoActions}>
+                <TouchableOpacity style={styles.photoAction} onPress={takePortrait} activeOpacity={0.78}>
+                  <Ionicons name="camera-outline" size={18} color={Colors.text.primary} />
+                  <Text style={styles.photoActionText}>Use Camera</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.photoAction} onPress={pickPortrait} activeOpacity={0.78}>
+                  <Ionicons name="image-outline" size={18} color={Colors.text.primary} />
+                  <Text style={styles.photoActionText}>Choose Photo</Text>
+                </TouchableOpacity>
+              </View>
 
               <View style={styles.bestBox}>
                 <Text style={styles.boxTitle}>For best results</Text>
-                <BulletText text="Full body visible, front-facing" />
+                <BulletText text={photoGuideMode === 'full' ? 'Full body visible, front-facing' : 'Head to waist visible, front-facing'} />
                 <BulletText text="Plain or simple background" />
                 <BulletText text="Good lighting, no heavy filters" />
                 <BulletText text="Fitted clothing for accurate fit" />
+                <BulletText text="Half-body photos are only recommended when trying on tops." />
+                {photoGuideMode === 'top' && !selectedOnlyTops ? (
+                  <Text style={styles.guideWarning}>Top-only framing is less reliable for dresses or bottoms. Use full body for this selection.</Text>
+                ) : null}
               </View>
 
               <View style={styles.measurementBox}>
                 <View style={styles.measurementHeader}>
                   <Text style={styles.boxTitle}>Try-on measurements</Text>
-                  <Text style={styles.measurementHint}>This session only</Text>
                 </View>
 
                 <View style={styles.measureGrid}>
@@ -864,7 +1170,10 @@ export default function TryOnScreen() {
                   />
                 ))}
               </View>
-              <Text style={styles.generatingFootnote}>This can take around 10-15 seconds.</Text>
+              <View style={styles.progressPercentTrack}>
+                <View style={[styles.progressPercentFill, { width: `${generationProgress}%` }]} />
+              </View>
+              <Text style={styles.generatingFootnote}>{generationProgress}% complete</Text>
             </View>
           ) : null}
 
@@ -914,14 +1223,7 @@ export default function TryOnScreen() {
                 onChange={() => setPhase('upload')}
               />
 
-              <View style={styles.reportBox}>
-                <Text style={styles.boxTitle}>Fit report</Text>
-                {aiReport.split('\n').map((line, index) => (
-                  <Text key={`fit-report-line-${index}`} style={styles.boxText}>
-                    {line}
-                  </Text>
-                ))}
-              </View>
+              <FitReport text={aiReport} products={selectedProducts} bodyProfile={sessionBodyProfile} />
 
               <SectionTitle title="You might also like" />
               <HorizontalProducts
@@ -1142,13 +1444,14 @@ const styles = StyleSheet.create({
   },
   container: {
     padding: Spacing.md,
-    paddingBottom: Spacing['2xl'],
+    paddingBottom: 140,
   },
   panel: {
     backgroundColor: 'rgba(26, 34, 53, 0.9)',
     borderColor: Colors.border.default,
     borderRadius: Radius.lg,
     borderWidth: 1,
+    marginBottom: Spacing['2xl'],
     padding: Spacing.md,
   },
   pillTitle: {
@@ -1180,6 +1483,33 @@ const styles = StyleSheet.create({
   progressBarActive: {
     backgroundColor: '#9AE9F5',
   },
+  guideTabs: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+    marginHorizontal: Spacing.lg,
+    marginBottom: Spacing.sm,
+  },
+  guideTab: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderColor: Colors.border.subtle,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    flex: 1,
+    flexDirection: 'row',
+    gap: Spacing.xs,
+    justifyContent: 'center',
+    minHeight: 38,
+  },
+  guideTabActive: {
+    backgroundColor: 'rgba(154, 233, 245, 0.22)',
+    borderColor: '#9AE9F5',
+  },
+  guideTabText: {
+    color: Colors.text.primary,
+    fontSize: FontSize.xs,
+    fontWeight: '600',
+  },
   uploadBox: {
     alignItems: 'center',
     backgroundColor: Colors.bg.input,
@@ -1192,6 +1522,13 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.md,
     overflow: 'hidden',
   },
+  uploadBoxFilled: {
+    alignSelf: 'center',
+    height: undefined,
+    maxHeight: 360,
+    minHeight: 210,
+    width: '86%',
+  },
   uploadPreview: {
     height: '100%',
     width: '100%',
@@ -1199,6 +1536,69 @@ const styles = StyleSheet.create({
   uploadEmpty: {
     alignItems: 'center',
     padding: Spacing.md,
+  },
+  bodyGuide: {
+    alignItems: 'center',
+    borderColor: 'rgba(216,237,255,0.55)',
+    borderRadius: Radius.md,
+    borderStyle: 'dashed',
+    borderWidth: 1,
+    height: 86,
+    justifyContent: 'center',
+    width: 70,
+  },
+  topGuide: {
+    alignItems: 'center',
+    borderColor: 'rgba(216,237,255,0.55)',
+    borderRadius: Radius.md,
+    borderStyle: 'dashed',
+    borderWidth: 1,
+    height: 72,
+    justifyContent: 'center',
+    width: 92,
+  },
+  guideHead: {
+    borderColor: '#D8EDFF',
+    borderRadius: 10,
+    borderWidth: 2,
+    height: 18,
+    marginBottom: 3,
+    width: 18,
+  },
+  guideShoulders: {
+    borderColor: '#D8EDFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    borderTopWidth: 2,
+    height: 8,
+    width: 48,
+  },
+  guideTorso: {
+    borderColor: '#D8EDFF',
+    borderLeftWidth: 2,
+    borderRightWidth: 2,
+    height: 25,
+    width: 28,
+  },
+  guideTorsoShort: {
+    borderColor: '#D8EDFF',
+    borderLeftWidth: 2,
+    borderRightWidth: 2,
+    borderBottomWidth: 2,
+    borderBottomLeftRadius: 8,
+    borderBottomRightRadius: 8,
+    height: 22,
+    width: 34,
+  },
+  guideLegs: {
+    flexDirection: 'row',
+    gap: 7,
+  },
+  guideLeg: {
+    backgroundColor: '#D8EDFF',
+    borderRadius: 2,
+    height: 22,
+    width: 3,
   },
   uploadTitle: {
     color: Colors.text.primary,
@@ -1226,6 +1626,27 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
   },
+  photoActions: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+    marginHorizontal: Spacing.lg,
+    marginBottom: Spacing.md,
+  },
+  photoAction: {
+    alignItems: 'center',
+    backgroundColor: '#276296',
+    borderRadius: Radius.md,
+    flex: 1,
+    flexDirection: 'row',
+    gap: Spacing.xs,
+    justifyContent: 'center',
+    minHeight: 42,
+  },
+  photoActionText: {
+    color: Colors.text.primary,
+    fontSize: FontSize.xs,
+    fontWeight: '700',
+  },
   bestBox: {
     backgroundColor: 'rgba(8, 14, 27, 0.78)',
     borderColor: Colors.border.subtle,
@@ -1233,6 +1654,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     marginBottom: Spacing.md,
     padding: Spacing.md,
+  },
+  guideWarning: {
+    color: '#FFD89A',
+    fontSize: FontSize.xs,
+    lineHeight: 17,
+    marginTop: Spacing.sm,
   },
   measurementBox: {
     backgroundColor: 'rgba(8, 14, 27, 0.78)',
@@ -1385,16 +1812,19 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   productRail: {
+    alignItems: 'flex-start',
     gap: Spacing.sm,
-    paddingBottom: Spacing.md,
+    paddingBottom: Spacing.xl,
   },
   miniCard: {
     backgroundColor: 'rgba(96, 132, 166, 0.62)',
     borderColor: 'rgba(206, 232, 255, 0.24)',
     borderRadius: Radius.md,
     borderWidth: 1,
+    justifyContent: 'space-between',
+    minHeight: 148,
     padding: 6,
-    width: 82,
+    width: 92,
   },
   miniImageWrap: {
     alignItems: 'center',
@@ -1425,7 +1855,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 2,
+    marginTop: 5,
     gap: 4,
   },
   miniPrice: {
@@ -1472,7 +1902,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#0B809A',
     borderRadius: Radius.full,
     justifyContent: 'center',
-    marginTop: Spacing.md,
+    marginTop: Spacing.sm,
+    marginBottom: Spacing.lg,
     minHeight: 48,
     paddingHorizontal: Spacing.xl,
     width: '72%',
@@ -1533,7 +1964,8 @@ const styles = StyleSheet.create({
   dots: {
     flexDirection: 'row',
     gap: 6,
-    marginVertical: Spacing.md,
+    marginTop: Spacing.md,
+    marginBottom: Spacing.sm,
   },
   dot: {
     backgroundColor: '#22D3EE',
@@ -1544,6 +1976,21 @@ const styles = StyleSheet.create({
   generatingFootnote: {
     color: Colors.text.secondary,
     fontSize: FontSize.sm,
+    fontWeight: '800',
+    marginTop: Spacing.sm,
+  },
+  progressPercentTrack: {
+    backgroundColor: 'rgba(255,255,255,0.16)',
+    borderRadius: Radius.full,
+    height: 8,
+    marginTop: Spacing.sm,
+    overflow: 'hidden',
+    width: '72%',
+  },
+  progressPercentFill: {
+    backgroundColor: '#22D3EE',
+    borderRadius: Radius.full,
+    height: '100%',
   },
   resultHeader: {
     alignItems: 'center',
@@ -1612,6 +2059,124 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     marginBottom: Spacing.md,
     padding: Spacing.md,
+  },
+  reportHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: Spacing.sm,
+    justifyContent: 'space-between',
+    marginBottom: Spacing.sm,
+  },
+  reportPager: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: Spacing.xs,
+    maxWidth: '70%',
+  },
+  reportPagerButton: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.14)',
+    borderRadius: Radius.full,
+    height: 28,
+    justifyContent: 'center',
+    width: 28,
+  },
+  reportPagerButtonDisabled: {
+    opacity: 0.28,
+  },
+  reportScore: {
+    backgroundColor: 'rgba(34, 211, 238, 0.16)',
+    borderColor: 'rgba(154, 233, 245, 0.35)',
+    borderRadius: Radius.full,
+    borderWidth: 1,
+    color: '#9AE9F5',
+    flexShrink: 1,
+    fontSize: FontSize.xs,
+    fontWeight: '900',
+    overflow: 'hidden',
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 4,
+    textAlign: 'right',
+  },
+  reportHeadline: {
+    color: Colors.text.primary,
+    fontSize: FontSize.sm,
+    fontWeight: '900',
+    lineHeight: 20,
+    marginBottom: Spacing.sm,
+    textAlign: 'center',
+  },
+  reportSummary: {
+    color: Colors.text.primary,
+    fontSize: FontSize.sm,
+    fontWeight: '800',
+    lineHeight: 20,
+    marginBottom: Spacing.sm,
+    textAlign: 'center',
+  },
+  reportMetaRow: {
+    alignItems: 'center',
+    borderBottomColor: 'rgba(255,255,255,0.16)',
+    borderBottomWidth: 1,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.sm,
+    justifyContent: 'center',
+    paddingBottom: Spacing.sm,
+  },
+  reportMetaText: {
+    color: Colors.text.primary,
+    fontSize: FontSize.xs,
+    lineHeight: 18,
+  },
+  reportMetaLabel: {
+    fontWeight: '900',
+  },
+  reportMeasurements: {
+    alignItems: 'center',
+    borderBottomColor: 'rgba(255,255,255,0.16)',
+    borderBottomWidth: 1,
+    paddingVertical: Spacing.sm,
+  },
+  reportMeasurementsTitle: {
+    color: Colors.text.primary,
+    fontSize: FontSize.xs,
+    fontWeight: '900',
+    marginBottom: 4,
+  },
+  reportMeasurementsText: {
+    color: Colors.text.primary,
+    fontSize: FontSize.xs,
+    lineHeight: 18,
+    textAlign: 'center',
+  },
+  reportSections: {
+    gap: Spacing.sm,
+    paddingTop: Spacing.sm,
+  },
+  reportSection: {
+    borderBottomColor: 'rgba(255,255,255,0.14)',
+    borderBottomWidth: 1,
+    paddingBottom: Spacing.sm,
+  },
+  reportSectionTitle: {
+    color: Colors.text.primary,
+    fontSize: FontSize.xs,
+    fontWeight: '900',
+    lineHeight: 18,
+    marginBottom: 5,
+  },
+  reportReasonLabel: {
+    color: Colors.text.primary,
+    fontSize: FontSize.xs,
+    fontWeight: '900',
+    marginBottom: 4,
+  },
+  reportReasonText: {
+    color: Colors.text.secondary,
+    fontSize: FontSize.xs,
+    lineHeight: 18,
+    marginBottom: 4,
   },
   bottomActions: {
     flexDirection: 'row',

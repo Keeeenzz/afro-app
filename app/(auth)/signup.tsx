@@ -22,7 +22,7 @@ export default function SignupPage() {
   const [error, setError] = useState('');
 
   const handleKey = (key: string) => {
-    if (phone.length >= 11) return;
+    if (phone.length >= 10) return;
     setPhone((p) => p + key);
     setError('');
   };
@@ -43,8 +43,12 @@ export default function SignupPage() {
 
   const validate = () => {
     const digits = phone.replace(/\D/g, '');
-    if (digits.length < 10) {
-      setError('Enter a valid mobile number.');
+    if (!digits) {
+      setError('Mobile number is required.');
+      return false;
+    }
+    if (digits.length !== 10 || !digits.startsWith('9')) {
+      setError('Enter a valid 10-digit PH mobile number.');
       return false;
     }
     return true;

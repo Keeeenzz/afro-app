@@ -18,6 +18,7 @@ import { Colors, FontSize, Spacing } from '@/constants/theme';
 
 const rules = [
   { label: 'At least 8 characters', test: (p: string) => p.length >= 8 },
+  { label: 'No more than 64 characters', test: (p: string) => p.length <= 64 },
   { label: 'One uppercase letter', test: (p: string) => /[A-Z]/.test(p) },
   { label: 'One number', test: (p: string) => /\d/.test(p) },
 ];
@@ -32,11 +33,33 @@ export default function PasswordPage() {
 
   const validate = () => {
     const e: Record<string, string> = {};
+    if (!password) e.password = 'Password is required.';
     if (!rules.every((r) => r.test(password)))
       e.password = 'Password does not meet all requirements.';
+    if (!confirm) e.confirm = 'Confirm password is required.';
     if (password !== confirm) e.confirm = 'Passwords do not match.';
     setErrors(e);
     return Object.keys(e).length === 0;
+  };
+
+  const updatePassword = (value: string) => {
+    setPassword(value.slice(0, 64));
+    setErrors((current) => {
+      if (!current.password) return current;
+      const next = { ...current };
+      delete next.password;
+      return next;
+    });
+  };
+
+  const updateConfirm = (value: string) => {
+    setConfirm(value.slice(0, 64));
+    setErrors((current) => {
+      if (!current.confirm) return current;
+      const next = { ...current };
+      delete next.confirm;
+      return next;
+    });
   };
 
   const handleContinue = () => {
@@ -68,8 +91,9 @@ export default function PasswordPage() {
             label="Password"
             placeholder="••••••••"
             value={password}
-            onChangeText={setPassword}
+            onChangeText={updatePassword}
             error={errors.password}
+            maxLength={64}
             isPassword
           />
 
@@ -77,8 +101,9 @@ export default function PasswordPage() {
             label="Confirm Password"
             placeholder="••••••••"
             value={confirm}
-            onChangeText={setConfirm}
+            onChangeText={updateConfirm}
             error={errors.confirm}
+            maxLength={64}
             isPassword
           />
 

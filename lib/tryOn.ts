@@ -56,6 +56,10 @@ export async function cacheRemoteImage(uri: string, filename = 'tryon-garment.jp
 }
 
 export async function saveDataImageToGallery(dataImage: string) {
+  if (/^file:\/\//i.test(dataImage)) {
+    return dataImage;
+  }
+
   if (/^https?:\/\//i.test(dataImage)) {
     const downloaded = await FileSystem.downloadAsync(
       dataImage,
