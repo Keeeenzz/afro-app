@@ -3,7 +3,7 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 import * as MediaLibrary from 'expo-media-library';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -20,6 +20,8 @@ import {
 import { apiGet } from '@/lib/api';
 import {
   cacheRemoteImage,
+  createTryOnJobId,
+  getTryOnProgress,
   materializeTryOnImage,
   reportText,
   resolvedProductImageUri,
@@ -34,6 +36,8 @@ import { useNav } from '@/context/NavContext';
 
 type TryOnPhase = 'upload' | 'generating' | 'result';
 type PhotoGuideMode = 'full' | 'top';
+type MixMatchMode = 'top_bottom' | 'dress_shirt';
+type LayeringStyle = 'layered' | 'tucked' | 'under';
 
 type Product = {
   id: string;
@@ -161,13 +165,43 @@ function measurementMetric(name: string): BodyMetric | null {
 }
 
 function garmentMetricScope(product: Product) {
-  const text = `${product.categorySlug ?? ''} ${product.category ?? ''} ${product.measurements?.[0]?.garmentType ?? ''}`.toLowerCase();
+  const text = `${product.measurements?.[0]?.garmentType ?? ''} ${product.categorySlug ?? ''} ${product.category ?? ''}`.toLowerCase();
 
   if (text.includes('bottom') || text.includes('pant') || text.includes('short') || text.includes('skirt')) {
     return new Set<BodyMetric>(['waist', 'hip']);
   }
 
   return new Set<BodyMetric>(['chest', 'waist', 'hip']);
+}
+
+function primaryGarmentType(product: Product) {
+  return product.measurements?.[0]?.garmentType ?? null;
+}
+
+function fitHeadline(report: string) {
+  return reportLines(report)[0] ?? '';
+}
+
+function fitScoreFromHeadline(headline: string) {
+  const match = headline.match(/\((\d+)\/100\)/);
+  return match ? Number(match[1]) : null;
+}
+
+function bodyMeasurementsForTryOn(bodyProfile: BodyProfile) {
+  return {
+    chest: bodyProfile.body_chest_cm,
+    waist: bodyProfile.body_waist_cm,
+    hip: bodyProfile.body_hip_cm,
+    inseam: bodyProfile.body_height_cm ? Number((bodyProfile.body_height_cm * 0.46).toFixed(1)) : null,
+  };
+}
+
+function garmentMeasurementsForTryOn(product: Product) {
+  return preferredMeasurements(product).reduce<Record<string, number>>((items, measurement) => {
+    const metric = measurementMetric(measurement.measurementName);
+    if (metric) items[metric] = Number(measurement.valueCm);
+    return items;
+  }, {});
 }
 
 function garmentMetricLabel(product: Product) {
@@ -670,7 +704,12 @@ function MeasurementInput({
 export default function TryOnScreen() {
   const router = useRouter();
   const { openNav } = useNav();
-  const { productId, productIds } = useLocalSearchParams<{ productId?: string; productIds?: string }>();
+  const { productId, productIds, mixMatchMode, layeringStyle } = useLocalSearchParams<{
+    productId?: string;
+    productIds?: string;
+    mixMatchMode?: string;
+    layeringStyle?: string;
+  }>();
   const { user, token } = useAuthStore();
   const [phase, setPhase] = useState<TryOnPhase>('upload');
   const [products, setProducts] = useState<Product[]>([]);
@@ -691,6 +730,36 @@ export default function TryOnScreen() {
   const [generationProgress, setGenerationProgress] = useState(0);
   const [portraitAspectRatio, setPortraitAspectRatio] = useState(1);
   const loadingDotScales = useRef([new Animated.Value(1), new Animated.Value(1), new Animated.Value(1)]).current;
+  const progressAnim = useRef(new Animated.Value(0)).current;
+  const progressFillWidth = progressAnim.interpolate({
+    inputRange: [0, 100],
+    outputRange: ['0%', '100%'],
+  });
+
+  const animateGenerationProgress = useCallback((value: number, duration = 360) => {
+    const nextValue = Math.min(100, Math.max(0, Math.round(value)));
+    setGenerationProgress(nextValue);
+    Animated.timing(progressAnim, {
+      toValue: nextValue,
+      duration,
+      useNativeDriver: false,
+    }).start();
+  }, [progressAnim]);
+
+  const resetTryOnFlow = useCallback((clearPortrait = false) => {
+    setPhase('upload');
+    setTryOnResult(null);
+    setDisplayResultUri('');
+    setGenerationProgress(0);
+    progressAnim.setValue(0);
+    setError('');
+    setGenerating(false);
+    setSavingImage(false);
+    if (clearPortrait) {
+      setPersonUri('');
+      setPortraitAspectRatio(1);
+    }
+  }, [progressAnim]);
 
   const hydrateProduct = async (product: Product | null) => {
     if (!product?.id) return product;
@@ -703,6 +772,7 @@ export default function TryOnScreen() {
   };
 
   const selectProduct = async (product: Product) => {
+    resetTryOnFlow();
     setSelectedProducts([product]);
     const hydrated = await hydrateProduct(product);
     setSelectedProducts(hydrated ? [hydrated] : []);
@@ -718,6 +788,7 @@ export default function TryOnScreen() {
       return;
     }
 
+    resetTryOnFlow();
     const hydrated = await hydrateProduct(product);
     if (!hydrated) return;
     setSelectedProducts((current) => {
@@ -729,6 +800,7 @@ export default function TryOnScreen() {
   };
 
   const removeProduct = (productIdToRemove: string) => {
+    resetTryOnFlow();
     setSelectedProducts((current) => current.filter((item) => String(item.id) !== String(productIdToRemove)));
   };
 
@@ -741,11 +813,7 @@ export default function TryOnScreen() {
         .slice(0, 2);
 
       if (requestedProductIds.length) {
-        setPhase('upload');
-        setTryOnResult(null);
-        setDisplayResultUri('');
-        setPersonUri('');
-        setGenerationProgress(0);
+        resetTryOnFlow(true);
       }
 
       const [allProducts, saved] = await Promise.all([
@@ -775,7 +843,7 @@ export default function TryOnScreen() {
     load()
       .catch((err) => setError(err instanceof Error ? err.message : 'Could not load try-on data.'))
       .finally(() => setLoading(false));
-  }, [productId, productIds, token, user?.user_id]);
+  }, [productId, productIds, resetTryOnFlow, token, user?.user_id]);
 
   useEffect(() => {
     setSessionChestCm(String(user?.body_chest_cm ?? ''));
@@ -819,21 +887,6 @@ export default function TryOnScreen() {
     return () => animation.stop();
   }, [loadingDotScales, phase]);
 
-  useEffect(() => {
-    if (phase !== 'generating') return;
-
-    setGenerationProgress((current) => (current > 0 ? current : 5));
-    const interval = setInterval(() => {
-      setGenerationProgress((current) => {
-        if (current >= 94) return current;
-        const increment = current < 50 ? 7 : current < 80 ? 4 : 2;
-        return Math.min(94, current + increment);
-      });
-    }, 700);
-
-    return () => clearInterval(interval);
-  }, [phase]);
-
   const mightLike = useMemo(() => {
     const tokens = styleTokens(user?.fashion_style);
 
@@ -859,13 +912,19 @@ export default function TryOnScreen() {
     body_hip_cm: toNullableNumber(sessionHipCm),
     body_height_cm: toNullableNumber(sessionHeightCm),
   };
+  const activeMixMatchMode: MixMatchMode | null = mixMatchMode === 'dress_shirt' || mixMatchMode === 'top_bottom'
+    ? mixMatchMode
+    : null;
+  const activeLayeringStyle: LayeringStyle = layeringStyle === 'tucked' || layeringStyle === 'under'
+    ? layeringStyle
+    : 'layered';
   const aiReport = (reportText(tryOnResult) || buildOutfitFitReport(selectedProducts, sessionBodyProfile)).replace(
     /based on the admin body reference/gi,
     'based on the product measurements',
   );
 
   const selectedOnlyTops = selectedProducts.length > 0 && selectedProducts.every((product) => (
-    tryOnCategory(product.category, product.categorySlug) === 'tops'
+    tryOnCategory(product.category, product.categorySlug, primaryGarmentType(product), product.name) === 'tops'
   ));
 
   const processPortrait = async (uri: string) => {
@@ -942,7 +1001,9 @@ export default function TryOnScreen() {
 
     setGenerating(true);
     setPhase('generating');
-    setGenerationProgress(5);
+    setGenerationProgress(0);
+    progressAnim.setValue(0);
+    animateGenerationProgress(2, 220);
     setError('');
 
     try {
@@ -951,27 +1012,67 @@ export default function TryOnScreen() {
       let finalResultUri = '';
 
       for (const [index, product] of selectedProducts.entries()) {
+        const jobId = createTryOnJobId();
         const rawGarmentUri = resolvedProductImageUri(product.imageUrl);
         const garmentUri = await cacheRemoteImage(rawGarmentUri, `tryon-${product.id}.jpg`);
-        setGenerationProgress(Math.max(12, Math.round((index / selectedProducts.length) * 70)));
-        const result = await submitTryOn({
-          personUri: currentPersonUri,
-          garmentUri,
-          category: tryOnCategory(product.category, product.categorySlug),
-        });
+        const fitReport = buildMeasurementFitReport(product, sessionBodyProfile);
+        const fitHeadlineText = fitHeadline(fitReport);
+        const updateOverallProgress = (jobPercent: number) => {
+          const overallPercent = ((index + jobPercent / 100) / selectedProducts.length) * 100;
+          animateGenerationProgress(overallPercent);
+        };
+        const progressInterval = setInterval(() => {
+          getTryOnProgress(jobId)
+            .then((progress) => {
+              if (!progress) return;
+
+              if (progress.status === 'error') {
+                return;
+              }
+
+              updateOverallProgress(progress.percent);
+            })
+            .catch(() => {});
+        }, 1500);
+
+        updateOverallProgress(0);
+        let result: TryOnResult;
+        try {
+          result = await submitTryOn({
+            jobId,
+            personUri: currentPersonUri,
+            garmentUri,
+            category: tryOnCategory(product.category, product.categorySlug, primaryGarmentType(product), product.name),
+            productName: product.name,
+            garmentName: product.name,
+            garmentType: primaryGarmentType(product),
+            productType: product.category,
+            mixMatchMode: activeMixMatchMode,
+            layeringStyle: activeMixMatchMode === 'dress_shirt' ? activeLayeringStyle : null,
+            fitStatus: fitHeadlineText,
+            fitScore: fitScoreFromHeadline(fitHeadlineText),
+            fitSummary: fitReport,
+            bodyMeasurements: bodyMeasurementsForTryOn(sessionBodyProfile),
+            garmentMeasurements: garmentMeasurementsForTryOn(product),
+          });
+        } finally {
+          clearInterval(progressInterval);
+        }
+
+        updateOverallProgress(100);
         finalResultUri = await materializeTryOnImage(result.image ?? '');
         currentPersonUri = finalResultUri;
         finalResult = result;
-        setGenerationProgress(Math.round(((index + 1) / selectedProducts.length) * 92));
       }
 
       setTryOnResult(finalResult);
       setDisplayResultUri(finalResultUri);
-      setGenerationProgress(100);
+      animateGenerationProgress(100, 260);
       setPhase('result');
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Could not generate the try-on result.';
       setError(message);
+      progressAnim.setValue(0);
       setGenerationProgress(0);
       setPhase('upload');
       Alert.alert('Try-on failed', message);
@@ -1171,7 +1272,7 @@ export default function TryOnScreen() {
                 ))}
               </View>
               <View style={styles.progressPercentTrack}>
-                <View style={[styles.progressPercentFill, { width: `${generationProgress}%` }]} />
+                <Animated.View style={[styles.progressPercentFill, { width: progressFillWidth }]} />
               </View>
               <Text style={styles.generatingFootnote}>{generationProgress}% complete</Text>
             </View>
@@ -1181,7 +1282,7 @@ export default function TryOnScreen() {
             <>
               <View style={styles.resultHeader}>
                 <Text style={styles.resultTitle}>Try-on result</Text>
-                <TouchableOpacity style={styles.roundIcon} onPress={() => setPhase('upload')}>
+                <TouchableOpacity style={styles.roundIcon} onPress={() => resetTryOnFlow()}>
                   <Ionicons name="refresh" size={17} color={Colors.text.primary} />
                 </TouchableOpacity>
               </View>
@@ -1220,7 +1321,7 @@ export default function TryOnScreen() {
                 products={selectedProducts}
                 compact={false}
                 onRemove={removeProduct}
-                onChange={() => setPhase('upload')}
+                onChange={() => resetTryOnFlow()}
               />
 
               <FitReport text={aiReport} products={selectedProducts} bodyProfile={sessionBodyProfile} />
@@ -1241,7 +1342,7 @@ export default function TryOnScreen() {
               <View style={styles.bottomActions}>
                 <TouchableOpacity
                   style={styles.secondaryAction}
-                  onPress={() => router.replace('/(tabs)/')}
+                  onPress={() => resetTryOnFlow(true)}
                   activeOpacity={0.82}
                 >
                   <Text style={styles.secondaryActionText}>Try another</Text>

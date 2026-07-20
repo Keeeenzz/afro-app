@@ -32,16 +32,31 @@ type Product = {
   isActive?: boolean;
 };
 
+type MixMode = 'top_bottom' | 'dress_shirt';
+type DressShirtStyle = 'layered' | 'tucked' | 'under';
+
+const DRESS_SHIRT_STYLES: { value: DressShirtStyle; label: string }[] = [
+  { value: 'layered', label: 'Layered' },
+  { value: 'tucked', label: 'Tucked' },
+  { value: 'under', label: 'Under' },
+];
+
 function peso(value: number) {
   return `PHP ${Number(value ?? 0).toLocaleString('en-PH', { maximumFractionDigits: 0 })}`;
 }
 
 function isTop(product: Product) {
-  return (product.categorySlug ?? product.category ?? '').toLowerCase().includes('top');
+  const text = `${product.name ?? ''} ${product.categorySlug ?? ''} ${product.category ?? ''}`.toLowerCase();
+  return text.includes('top') || text.includes('shirt') || text.includes('hoodie') || text.includes('jacket');
 }
 
 function isBottom(product: Product) {
   return (product.categorySlug ?? product.category ?? '').toLowerCase().includes('bottom');
+}
+
+function isDress(product: Product) {
+  const text = `${product.name ?? ''} ${product.categorySlug ?? ''} ${product.category ?? ''}`.toLowerCase();
+  return text.includes('dress') || text.includes('jumpsuit') || text.includes('one');
 }
 
 function wrapIndex(current: number, total: number, direction: -1 | 1) {
@@ -53,8 +68,12 @@ export default function MixMatchScreen() {
   const router = useRouter();
   const { openNav } = useNav();
   const [products, setProducts] = useState<Product[]>([]);
+  const [mixMode, setMixMode] = useState<MixMode>('top_bottom');
+  const [dressShirtStyle, setDressShirtStyle] = useState<DressShirtStyle>('layered');
   const [topIndex, setTopIndex] = useState(0);
   const [bottomIndex, setBottomIndex] = useState(0);
+  const [dressIndex, setDressIndex] = useState(0);
+  const [shirtIndex, setShirtIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -67,9 +86,14 @@ export default function MixMatchScreen() {
 
   const tops = useMemo(() => products.filter(isTop), [products]);
   const bottoms = useMemo(() => products.filter(isBottom), [products]);
+  const dresses = useMemo(() => products.filter(isDress), [products]);
   const selectedTop = tops[topIndex] ?? null;
   const selectedBottom = bottoms[bottomIndex] ?? null;
-  const canTryOn = !!selectedTop && !!selectedBottom;
+  const selectedDress = dresses[dressIndex] ?? null;
+  const selectedShirt = tops[shirtIndex] ?? null;
+  const canTryOn = mixMode === 'top_bottom'
+    ? !!selectedTop && !!selectedBottom
+    : !!selectedDress && !!selectedShirt;
 
   useEffect(() => {
     if (topIndex >= tops.length) setTopIndex(0);
@@ -79,13 +103,40 @@ export default function MixMatchScreen() {
     if (bottomIndex >= bottoms.length) setBottomIndex(0);
   }, [bottomIndex, bottoms.length]);
 
+  useEffect(() => {
+    if (dressIndex >= dresses.length) setDressIndex(0);
+  }, [dressIndex, dresses.length]);
+
+  useEffect(() => {
+    if (shirtIndex >= tops.length) setShirtIndex(0);
+  }, [shirtIndex, tops.length]);
+
   const goToTryOn = () => {
-    if (!selectedTop || !selectedBottom) return;
+    if (mixMode === 'top_bottom') {
+      if (!selectedTop || !selectedBottom) return;
+
+      router.push({
+        pathname: '/(tabs)/try-on',
+        params: {
+          productIds: `${selectedTop.id},${selectedBottom.id}`,
+          mixMatchMode: 'top_bottom',
+        },
+      });
+      return;
+    }
+
+    if (!selectedDress || !selectedShirt) return;
+
+    const orderedIds = dressShirtStyle === 'under'
+      ? `${selectedShirt.id},${selectedDress.id}`
+      : `${selectedDress.id},${selectedShirt.id}`;
 
     router.push({
       pathname: '/(tabs)/try-on',
       params: {
-        productIds: `${selectedTop.id},${selectedBottom.id}`,
+        productIds: orderedIds,
+        mixMatchMode: 'dress_shirt',
+        layeringStyle: dressShirtStyle,
       },
     });
   };
@@ -118,37 +169,98 @@ export default function MixMatchScreen() {
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
         <Text style={styles.title}>Mix & Match</Text>
         <Text style={styles.subtitle}>
-          Build a two-piece look from live admin products. Dresses stay in Try On because they already cover the whole outfit.
+          Build a layered look from live admin products, then send it to Try On.
         </Text>
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
+        <View style={styles.modeTabs}>
+          <ModeButton
+            label="Top + Bottom"
+            selected={mixMode === 'top_bottom'}
+            onPress={() => setMixMode('top_bottom')}
+          />
+          <ModeButton
+            label="Dress + Shirt"
+            selected={mixMode === 'dress_shirt'}
+            onPress={() => setMixMode('dress_shirt')}
+          />
+        </View>
+
+        {mixMode === 'dress_shirt' ? (
+          <View style={styles.styleTabs}>
+            {DRESS_SHIRT_STYLES.map((style) => (
+              <ModeButton
+                key={style.value}
+                label={style.label}
+                selected={dressShirtStyle === style.value}
+                onPress={() => setDressShirtStyle(style.value)}
+              />
+            ))}
+          </View>
+        ) : null}
+
         <View style={styles.stage}>
-          <CarouselSlot
-            label="Top"
-            product={selectedTop}
-            emptyText="No active tops yet."
-            onPrevious={() => setTopIndex((current) => wrapIndex(current, tops.length, -1))}
-            onNext={() => setTopIndex((current) => wrapIndex(current, tops.length, 1))}
-            disabled={tops.length <= 1}
-          />
+          {mixMode === 'top_bottom' ? (
+            <>
+              <CarouselSlot
+                label="Top"
+                product={selectedTop}
+                emptyText="No active tops yet."
+                onPrevious={() => setTopIndex((current) => wrapIndex(current, tops.length, -1))}
+                onNext={() => setTopIndex((current) => wrapIndex(current, tops.length, 1))}
+                disabled={tops.length <= 1}
+              />
 
-          <View style={styles.separator} />
+              <View style={styles.separator} />
 
-          <CarouselSlot
-            label="Bottom"
-            product={selectedBottom}
-            emptyText="No active bottoms yet."
-            onPrevious={() => setBottomIndex((current) => wrapIndex(current, bottoms.length, -1))}
-            onNext={() => setBottomIndex((current) => wrapIndex(current, bottoms.length, 1))}
-            disabled={bottoms.length <= 1}
-          />
+              <CarouselSlot
+                label="Bottom"
+                product={selectedBottom}
+                emptyText="No active bottoms yet."
+                onPrevious={() => setBottomIndex((current) => wrapIndex(current, bottoms.length, -1))}
+                onNext={() => setBottomIndex((current) => wrapIndex(current, bottoms.length, 1))}
+                disabled={bottoms.length <= 1}
+              />
+            </>
+          ) : (
+            <>
+              <CarouselSlot
+                label="Dress"
+                product={selectedDress}
+                emptyText="No active dresses yet."
+                onPrevious={() => setDressIndex((current) => wrapIndex(current, dresses.length, -1))}
+                onNext={() => setDressIndex((current) => wrapIndex(current, dresses.length, 1))}
+                disabled={dresses.length <= 1}
+              />
+
+              <View style={styles.separator} />
+
+              <CarouselSlot
+                label="Shirt"
+                product={selectedShirt}
+                emptyText="No active shirts yet."
+                onPrevious={() => setShirtIndex((current) => wrapIndex(current, tops.length, -1))}
+                onNext={() => setShirtIndex((current) => wrapIndex(current, tops.length, 1))}
+                disabled={tops.length <= 1}
+              />
+            </>
+          )}
         </View>
 
         <Text style={styles.sectionTitle}>Selected items</Text>
         <View style={styles.selectedList}>
-          <SelectedRow label="Top" product={selectedTop} />
-          <SelectedRow label="Bottom" product={selectedBottom} />
+          {mixMode === 'top_bottom' ? (
+            <>
+              <SelectedRow label="Top" product={selectedTop} />
+              <SelectedRow label="Bottom" product={selectedBottom} />
+            </>
+          ) : (
+            <>
+              <SelectedRow label="Dress" product={selectedDress} />
+              <SelectedRow label={`Shirt (${dressShirtStyle})`} product={selectedShirt} />
+            </>
+          )}
         </View>
 
         <TouchableOpacity
@@ -255,6 +367,26 @@ function SelectedRow({ label, product }: { label: string; product: Product | nul
   );
 }
 
+function ModeButton({
+  label,
+  selected,
+  onPress,
+}: {
+  label: string;
+  selected: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity
+      style={[styles.modeButton, selected && styles.modeButtonActive]}
+      onPress={onPress}
+      activeOpacity={0.76}
+    >
+      <Text style={[styles.modeButtonText, selected && styles.modeButtonTextActive]}>{label}</Text>
+    </TouchableOpacity>
+  );
+}
+
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
@@ -325,6 +457,40 @@ const styles = StyleSheet.create({
     color: Colors.status.error,
     fontSize: FontSize.sm,
     marginBottom: Spacing.sm,
+  },
+  modeTabs: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+    marginBottom: Spacing.sm,
+  },
+  styleTabs: {
+    flexDirection: 'row',
+    gap: Spacing.xs,
+    marginBottom: Spacing.md,
+  },
+  modeButton: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderColor: 'rgba(206, 232, 255, 0.18)',
+    borderRadius: Radius.full,
+    borderWidth: 1,
+    flex: 1,
+    minHeight: 38,
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.sm,
+  },
+  modeButtonActive: {
+    backgroundColor: '#0B809A',
+    borderColor: '#9AE9F5',
+  },
+  modeButtonText: {
+    color: Colors.text.secondary,
+    fontSize: FontSize.xs,
+    fontWeight: '900',
+    textAlign: 'center',
+  },
+  modeButtonTextActive: {
+    color: Colors.white,
   },
   stage: {
     backgroundColor: 'rgba(26, 34, 53, 0.92)',
