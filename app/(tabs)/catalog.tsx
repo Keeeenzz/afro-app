@@ -68,6 +68,7 @@ const SORT_LABELS: Record<SortOption, string> = {
   priceHigh: 'Price: High',
 };
 const PRODUCTS_PER_PAGE = 10;
+const NEUTRAL_BOTTOM_COLORS = ['black', 'white', 'gray', 'grey', 'beige', 'cream', 'brown', 'navy', 'denim', 'blue'];
 
 function compactPeso(value: number) {
   return `₱ ${Number(value ?? 0).toLocaleString('en-PH', {
@@ -94,11 +95,108 @@ function productSizeLabels(product: Product) {
     .filter(Boolean);
 }
 
+function normalizeSizeLabel(value?: string | null) {
+  const normalized = (value ?? '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+
+  if (!normalized) return '';
+  if (['xs', 'extra small', 'x small'].includes(normalized)) return 'xs';
+  if (['s', 'small'].includes(normalized)) return 's';
+  if (['m', 'medium'].includes(normalized)) return 'm';
+  if (['l', 'large'].includes(normalized)) return 'l';
+  if (['xl', 'extra large', 'x large'].includes(normalized)) return 'xl';
+  if (['xxl', '2xl', 'double xl', 'extra extra large'].includes(normalized)) return 'xxl';
+  return normalized;
+}
+
+function productNameSizeHint(product: Product) {
+  const name = (product.name ?? '').toLowerCase().trim();
+
+  if (/^(extra small|x-small|xs)\b/.test(name) || /\bsize\s*(extra small|x-small|xs)\b/.test(name)) return 'xs';
+  if (/^(small|s)\b/.test(name) || /\bsize\s*(small|s)\b/.test(name)) return 's';
+  if (/^(medium|m)\b/.test(name) || /\bsize\s*(medium|m)\b/.test(name)) return 'm';
+  if (/^(large|l)\b/.test(name) || /\bsize\s*(large|l)\b/.test(name)) return 'l';
+  if (/^(extra large|x-large|xl)\b/.test(name) || /\bsize\s*(extra large|x-large|xl)\b/.test(name)) return 'xl';
+  if (/^(extra extra large|xxl|2xl)\b/.test(name) || /\bsize\s*(extra extra large|xxl|2xl)\b/.test(name)) return 'xxl';
+  return '';
+}
+
 function normalizeColorName(value?: string | null) {
   return (value ?? '')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, ' ')
     .trim();
+}
+
+function productCategoryText(product: Product) {
+  return `${product.categorySlug ?? ''} ${product.category ?? ''} ${product.name ?? ''}`.toLowerCase();
+}
+
+function isTopProduct(product: Product) {
+  const text = productCategoryText(product);
+  return text.includes('top') || text.includes('shirt') || text.includes('hoodie') || text.includes('jacket');
+}
+
+function isBottomProduct(product: Product) {
+  const text = productCategoryText(product);
+  return text.includes('bottom') || text.includes('pant') || text.includes('short') || text.includes('skirt');
+}
+
+function isDressProduct(product: Product) {
+  const text = productCategoryText(product);
+  return text.includes('dress') || text.includes('jumpsuit') || text.includes('one');
+}
+
+function productColorNames(product: Product) {
+  return [product.colorName, product.color, product.colorFamily]
+    .map(normalizeColorName)
+    .filter(Boolean);
+}
+
+function colorNamesOverlap(sourceColors: string[], targetColors: string[]) {
+  if (!sourceColors.length || !targetColors.length) return false;
+
+  return sourceColors.some((sourceColor) =>
+    targetColors.some(
+      (targetColor) =>
+        targetColor === sourceColor ||
+        targetColor.includes(sourceColor) ||
+        sourceColor.includes(targetColor),
+    ),
+  );
+}
+
+function bottomHarmonyColorsForTop(topColors: string[]) {
+  const colors = new Set<string>();
+
+  topColors.forEach((color) => {
+    const isNeutral = ['black', 'white', 'gray', 'grey', 'beige', 'cream', 'brown', 'navy', 'denim'].some((neutral) =>
+      color.includes(neutral),
+    );
+
+    if (isNeutral) {
+      NEUTRAL_BOTTOM_COLORS.forEach((item) => colors.add(item));
+      return;
+    }
+
+    ['black', 'white', 'gray', 'grey', 'beige', 'cream', 'navy', 'denim'].forEach((item) => colors.add(item));
+
+    if (color.includes('red') || color.includes('pink') || color.includes('rose')) {
+      ['blue', 'navy', 'denim', 'brown', 'cream', 'beige'].forEach((item) => colors.add(item));
+    } else if (color.includes('orange') || color.includes('yellow') || color.includes('gold')) {
+      ['blue', 'navy', 'denim', 'brown', 'olive'].forEach((item) => colors.add(item));
+    } else if (color.includes('green') || color.includes('olive')) {
+      ['brown', 'beige', 'cream', 'navy', 'denim'].forEach((item) => colors.add(item));
+    } else if (color.includes('blue') || color.includes('teal') || color.includes('cyan')) {
+      ['white', 'gray', 'grey', 'beige', 'cream', 'brown', 'denim'].forEach((item) => colors.add(item));
+    } else if (color.includes('purple') || color.includes('violet') || color.includes('lavender')) {
+      ['black', 'gray', 'grey', 'white', 'cream', 'beige', 'navy'].forEach((item) => colors.add(item));
+    }
+  });
+
+  return Array.from(colors);
 }
 
 function pageItems(currentPage: number, totalPages: number) {
@@ -263,11 +361,22 @@ export default function CatalogScreen() {
 
   const filteredProducts = useMemo(() => {
     const term = search.trim().toLowerCase();
-    const selectedSize = sizeLabel === 'all' ? null : sizeLabel.toLowerCase();
     const selectedToneColors = toneColorNames.map(normalizeColorName).filter(Boolean);
+    const prescribedSize =
+      selectedToneColors.length && user?.preferred_size ? normalizeSizeLabel(user.preferred_size) : null;
+    const selectedSize = sizeLabel === 'all' ? prescribedSize : normalizeSizeLabel(sizeLabel);
+    const skinMatchedTopColors = products
+      .filter((product) => isTopProduct(product) && colorNamesOverlap(selectedToneColors, productColorNames(product)))
+      .flatMap(productColorNames);
+    const bottomReferenceColors = skinMatchedTopColors.length
+      ? bottomHarmonyColorsForTop(skinMatchedTopColors)
+      : selectedToneColors.length
+        ? NEUTRAL_BOTTOM_COLORS
+        : [];
 
     const filtered = products.filter((product) => {
-      const sizes = productSizeLabels(product).map((size) => size.toLowerCase());
+      const sizes = productSizeLabels(product).map(normalizeSizeLabel).filter(Boolean);
+      const explicitNameSize = productNameSizeHint(product);
       const text = [
         product.name,
         product.description,
@@ -282,27 +391,23 @@ export default function CatalogScreen() {
         .filter(Boolean)
         .join(' ')
         .toLowerCase();
-      const productColorNames = [product.colorName, product.color, product.colorFamily]
-        .map(normalizeColorName)
-        .filter(Boolean);
-      const matchesToneColors =
-        !selectedToneColors.length ||
-        selectedToneColors.some((toneColor) =>
-          productColorNames.some(
-            (productColor) =>
-              productColor === toneColor ||
-              productColor.includes(toneColor) ||
-              toneColor.includes(productColor),
-          ),
-        );
+      const colors = productColorNames(product);
+      const isSkinAnchoredProduct = isTopProduct(product) || isDressProduct(product);
+      const matchesSkinToTop =
+        !selectedToneColors.length || !isSkinAnchoredProduct || colorNamesOverlap(selectedToneColors, colors);
+      const matchesTopToBottom =
+        !selectedToneColors.length || !isBottomProduct(product) || colorNamesOverlap(bottomReferenceColors, colors);
+      const matchesSelectedSize =
+        !selectedSize || (sizes.includes(selectedSize) && (!explicitNameSize || explicitNameSize === selectedSize));
 
       return (
         (!term || text.includes(term)) &&
         (categoryId === 'all' || String(product.categoryId) === String(categoryId)) &&
-        (!selectedSize || sizes.includes(selectedSize)) &&
+        matchesSelectedSize &&
         (genderId === 'all' || String(product.genderId) === String(genderId)) &&
         (colorFamilyId === 'all' || String(product.colorFamilyId) === String(colorFamilyId)) &&
-        matchesToneColors &&
+        matchesSkinToTop &&
+        matchesTopToBottom &&
         (!inStockOnly || product.qty > 0)
       );
     });
@@ -312,7 +417,18 @@ export default function CatalogScreen() {
       if (sort === 'priceHigh') return b.price - a.price;
       return 0;
     });
-  }, [categoryId, colorFamilyId, genderId, inStockOnly, products, search, sizeLabel, sort, toneColorNames]);
+  }, [
+    categoryId,
+    colorFamilyId,
+    genderId,
+    inStockOnly,
+    products,
+    search,
+    sizeLabel,
+    sort,
+    toneColorNames,
+    user?.preferred_size,
+  ]);
 
   const totalPages = Math.max(1, Math.ceil(filteredProducts.length / PRODUCTS_PER_PAGE));
   const pageStartIndex = (currentPage - 1) * PRODUCTS_PER_PAGE;
@@ -432,7 +548,7 @@ export default function CatalogScreen() {
                 </Text>
                 <Text style={styles.toneText} numberOfLines={1}>
                   {toneColorNames.length
-                    ? toneColorNames.slice(0, 4).join(', ')
+                    ? `${toneColorNames.slice(0, 4).join(', ')}${user?.preferred_size ? ` / size ${user.preferred_size}` : ''}`
                     : 'Analyze a photo to filter catalog colors'}
                 </Text>
               </View>
@@ -522,6 +638,7 @@ export default function CatalogScreen() {
           <ProductCard
             product={item}
             isSaved={savedIds.has(item.id)}
+            prescribedSize={toneColorNames.length ? user?.preferred_size ?? null : null}
             onToggleSaved={() => toggleSaved(item.id)}
             onTryOn={() =>
               router.push({
@@ -636,18 +753,22 @@ function PaginationControls({
 function ProductCard({
   product,
   isSaved,
+  prescribedSize,
   onToggleSaved,
   onTryOn,
 }: {
   product: Product;
   isSaved: boolean;
+  prescribedSize?: string | null;
   onToggleSaved: () => void;
   onTryOn: () => void;
 }) {
   const router = useRouter();
   const uri = imageUrl(product.imageUrl);
   const sizes = productSizeLabels(product);
-  const primarySize = sizes[0];
+  const normalizedPrescribedSize = normalizeSizeLabel(prescribedSize);
+  const matchedSize = sizes.find((size) => normalizeSizeLabel(size) === normalizedPrescribedSize);
+  const primarySize = matchedSize ?? sizes[0];
   const soldOut = product.qty <= 0;
 
   return (

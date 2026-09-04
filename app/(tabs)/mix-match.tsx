@@ -8,11 +8,13 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
 import { Colors, FontSize, Radius, Spacing } from '@/constants/theme';
 import { useNav } from '@/context/NavContext';
+import { useAuthStore } from '@/hooks/useAuthStore';
 import { apiGet, imageUrl } from '@/lib/api';
 
 type Product = {
@@ -32,14 +34,25 @@ type Product = {
   isActive?: boolean;
 };
 
-type MixMode = 'top_bottom' | 'dress_shirt';
-type DressShirtStyle = 'layered' | 'tucked' | 'under';
+type MixMode = 'top_bottom' | 'dress_top' | 'dress_bottom';
+type DressTopStyle = 'over' | 'under';
+type DressBottomStyle = 'under' | 'over';
 
-const DRESS_SHIRT_STYLES: { value: DressShirtStyle; label: string }[] = [
-  { value: 'layered', label: 'Layered' },
-  { value: 'tucked', label: 'Tucked' },
+const MIX_MODES: { value: MixMode; label: string }[] = [
+  { value: 'top_bottom', label: 'Top + Bottom' },
+  { value: 'dress_top', label: 'Dress + Top' },
+  { value: 'dress_bottom', label: 'Dress + Bottom' },
+];
+
+const DRESS_TOP_STYLES: { value: DressTopStyle; label: string }[] = [
+  { value: 'over', label: 'Over' },
   { value: 'under', label: 'Under' },
 ];
+const DRESS_BOTTOM_STYLES: { value: DressBottomStyle; label: string }[] = [
+  { value: 'under', label: 'Under' },
+  { value: 'over', label: 'Over' },
+];
+const SIZE_OPTIONS = ['XS', 'S', 'M', 'L', 'XL', 'XXL'];
 
 function peso(value: number) {
   return `PHP ${Number(value ?? 0).toLocaleString('en-PH', { maximumFractionDigits: 0 })}`;
@@ -51,12 +64,50 @@ function isTop(product: Product) {
 }
 
 function isBottom(product: Product) {
-  return (product.categorySlug ?? product.category ?? '').toLowerCase().includes('bottom');
+  const text = `${product.name ?? ''} ${product.categorySlug ?? ''} ${product.category ?? ''}`.toLowerCase();
+  return text.includes('bottom') || text.includes('pant') || text.includes('short') || text.includes('skirt');
 }
 
 function isDress(product: Product) {
   const text = `${product.name ?? ''} ${product.categorySlug ?? ''} ${product.category ?? ''}`.toLowerCase();
   return text.includes('dress') || text.includes('jumpsuit') || text.includes('one');
+}
+
+function productSizeLabels(product: Product) {
+  return (product.size ?? '')
+    .split(',')
+    .map((size) => size.trim())
+    .filter(Boolean);
+}
+
+function normalizeSizeLabel(value?: string | null) {
+  const normalized = (value ?? '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+
+  if (!normalized) return '';
+  if (['xs', 'extra small', 'x small'].includes(normalized)) return 'xs';
+  if (['s', 'small'].includes(normalized)) return 's';
+  if (['m', 'medium'].includes(normalized)) return 'm';
+  if (['l', 'large'].includes(normalized)) return 'l';
+  if (['xl', 'extra large', 'x large'].includes(normalized)) return 'xl';
+  if (['xxl', '2xl', 'double xl', 'extra extra large'].includes(normalized)) return 'xxl';
+  return normalized;
+}
+
+function productMatchesSize(product: Product, selectedSize: string) {
+  const normalizedSelectedSize = normalizeSizeLabel(selectedSize);
+  if (!normalizedSelectedSize) return true;
+
+  return productSizeLabels(product)
+    .map(normalizeSizeLabel)
+    .some((size) => size === normalizedSelectedSize);
+}
+
+function hasTryOnStock(product: Product) {
+  if (product.qty == null) return true;
+  return Number(product.qty) > 0 || productSizeLabels(product).length > 0;
 }
 
 function wrapIndex(current: number, total: number, direction: -1 | 1) {
@@ -67,33 +118,59 @@ function wrapIndex(current: number, total: number, direction: -1 | 1) {
 export default function MixMatchScreen() {
   const router = useRouter();
   const { openNav } = useNav();
+  const { user } = useAuthStore();
   const [products, setProducts] = useState<Product[]>([]);
   const [mixMode, setMixMode] = useState<MixMode>('top_bottom');
-  const [dressShirtStyle, setDressShirtStyle] = useState<DressShirtStyle>('layered');
+  const [dressTopStyle, setDressTopStyle] = useState<DressTopStyle>('over');
+  const [dressBottomStyle, setDressBottomStyle] = useState<DressBottomStyle>('under');
   const [topIndex, setTopIndex] = useState(0);
   const [bottomIndex, setBottomIndex] = useState(0);
   const [dressIndex, setDressIndex] = useState(0);
   const [shirtIndex, setShirtIndex] = useState(0);
+  const [selectedSize, setSelectedSize] = useState('');
+  const [sessionChestCm, setSessionChestCm] = useState('');
+  const [sessionWaistCm, setSessionWaistCm] = useState('');
+  const [sessionHipCm, setSessionHipCm] = useState('');
+  const [sessionHeightCm, setSessionHeightCm] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
   useEffect(() => {
     apiGet<Product[]>('/products')
-      .then((items) => setProducts(items.filter((item) => item.isActive !== false && Number(item.qty ?? 1) > 0)))
+      .then((items) => setProducts(items.filter((item) => item.isActive !== false && hasTryOnStock(item))))
       .catch((err) => setError(err instanceof Error ? err.message : 'Could not load Mix & Match products.'))
       .finally(() => setLoading(false));
   }, []);
 
-  const tops = useMemo(() => products.filter(isTop), [products]);
-  const bottoms = useMemo(() => products.filter(isBottom), [products]);
-  const dresses = useMemo(() => products.filter(isDress), [products]);
+  useEffect(() => {
+    setSelectedSize(user?.preferred_size ?? '');
+    setSessionChestCm(String(user?.body_chest_cm ?? ''));
+    setSessionWaistCm(String(user?.body_waist_cm ?? ''));
+    setSessionHipCm(String(user?.body_hip_cm ?? ''));
+    setSessionHeightCm(String(user?.body_height_cm ?? ''));
+  }, [
+    user?.body_chest_cm,
+    user?.body_height_cm,
+    user?.body_hip_cm,
+    user?.body_waist_cm,
+    user?.preferred_size,
+  ]);
+
+  const sizeFilteredProducts = useMemo(
+    () => products.filter((product) => productMatchesSize(product, selectedSize)),
+    [products, selectedSize],
+  );
+  const tops = useMemo(() => sizeFilteredProducts.filter(isTop), [sizeFilteredProducts]);
+  const bottoms = useMemo(() => sizeFilteredProducts.filter(isBottom), [sizeFilteredProducts]);
+  const dresses = useMemo(() => sizeFilteredProducts.filter(isDress), [sizeFilteredProducts]);
   const selectedTop = tops[topIndex] ?? null;
   const selectedBottom = bottoms[bottomIndex] ?? null;
   const selectedDress = dresses[dressIndex] ?? null;
   const selectedShirt = tops[shirtIndex] ?? null;
-  const canTryOn = mixMode === 'top_bottom'
-    ? !!selectedTop && !!selectedBottom
-    : !!selectedDress && !!selectedShirt;
+  const canTryOn =
+    (mixMode === 'top_bottom' && !!selectedTop && !!selectedBottom) ||
+    (mixMode === 'dress_top' && !!selectedDress && !!selectedShirt) ||
+    (mixMode === 'dress_bottom' && !!selectedDress && !!selectedBottom);
 
   useEffect(() => {
     if (topIndex >= tops.length) setTopIndex(0);
@@ -112,6 +189,13 @@ export default function MixMatchScreen() {
   }, [shirtIndex, tops.length]);
 
   const goToTryOn = () => {
+    const measurementParams = {
+      bodyChestCm: sessionChestCm,
+      bodyWaistCm: sessionWaistCm,
+      bodyHipCm: sessionHipCm,
+      bodyHeightCm: sessionHeightCm,
+    };
+
     if (mixMode === 'top_bottom') {
       if (!selectedTop || !selectedBottom) return;
 
@@ -120,25 +204,49 @@ export default function MixMatchScreen() {
         params: {
           productIds: `${selectedTop.id},${selectedBottom.id}`,
           mixMatchMode: 'top_bottom',
+          ...measurementParams,
         },
       });
       return;
     }
 
-    if (!selectedDress || !selectedShirt) return;
+    if (mixMode === 'dress_top') {
+      if (!selectedDress || !selectedShirt) return;
 
-    const orderedIds = dressShirtStyle === 'under'
-      ? `${selectedShirt.id},${selectedDress.id}`
-      : `${selectedDress.id},${selectedShirt.id}`;
+      const orderedIds = dressTopStyle === 'under'
+        ? `${selectedShirt.id},${selectedDress.id}`
+        : `${selectedDress.id},${selectedShirt.id}`;
 
-    router.push({
-      pathname: '/(tabs)/try-on',
-      params: {
-        productIds: orderedIds,
-        mixMatchMode: 'dress_shirt',
-        layeringStyle: dressShirtStyle,
-      },
-    });
+      router.push({
+        pathname: '/(tabs)/try-on',
+        params: {
+          productIds: orderedIds,
+          mixMatchMode: 'dress_top',
+          layeringStyle: dressTopStyle,
+          ...measurementParams,
+        },
+      });
+      return;
+    }
+
+    if (mixMode === 'dress_bottom') {
+      if (!selectedDress || !selectedBottom) return;
+      const orderedIds = dressBottomStyle === 'under'
+        ? `${selectedDress.id},${selectedBottom.id}`
+        : `${selectedBottom.id},${selectedDress.id}`;
+
+      router.push({
+        pathname: '/(tabs)/try-on',
+        params: {
+          productIds: orderedIds,
+          mixMatchMode: 'dress_bottom',
+          layeringStyle: dressBottomStyle,
+          ...measurementParams,
+        },
+      });
+      return;
+    }
+
   };
 
   if (loading) {
@@ -175,30 +283,66 @@ export default function MixMatchScreen() {
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
         <View style={styles.modeTabs}>
-          <ModeButton
-            label="Top + Bottom"
-            selected={mixMode === 'top_bottom'}
-            onPress={() => setMixMode('top_bottom')}
-          />
-          <ModeButton
-            label="Dress + Shirt"
-            selected={mixMode === 'dress_shirt'}
-            onPress={() => setMixMode('dress_shirt')}
-          />
+          {MIX_MODES.map((mode) => (
+            <ModeButton
+              key={mode.value}
+              label={mode.label}
+              selected={mixMode === mode.value}
+              onPress={() => setMixMode(mode.value)}
+            />
+          ))}
         </View>
 
-        {mixMode === 'dress_shirt' ? (
+        {mixMode === 'dress_top' ? (
           <View style={styles.styleTabs}>
-            {DRESS_SHIRT_STYLES.map((style) => (
+            {DRESS_TOP_STYLES.map((style) => (
               <ModeButton
                 key={style.value}
                 label={style.label}
-                selected={dressShirtStyle === style.value}
-                onPress={() => setDressShirtStyle(style.value)}
+                selected={dressTopStyle === style.value}
+                onPress={() => setDressTopStyle(style.value)}
               />
             ))}
           </View>
         ) : null}
+
+        {mixMode === 'dress_bottom' ? (
+          <View style={styles.styleTabs}>
+            {DRESS_BOTTOM_STYLES.map((style) => (
+              <ModeButton
+                key={style.value}
+                label={style.label}
+                selected={dressBottomStyle === style.value}
+                onPress={() => setDressBottomStyle(style.value)}
+              />
+            ))}
+          </View>
+        ) : null}
+
+        <View style={styles.measurementBox}>
+          <View style={styles.measurementHeader}>
+            <Text style={styles.boxTitle}>Mix & Match measurements</Text>
+            <Text style={styles.measurementHint}>
+              {selectedSize ? `Size ${selectedSize}` : 'All sizes'}
+            </Text>
+          </View>
+
+          <View style={styles.sizeTabs}>
+            <ModeButton label="All" selected={!selectedSize} onPress={() => setSelectedSize('')} />
+            {SIZE_OPTIONS.map((size) => (
+              <ModeButton key={size} label={size} selected={normalizeSizeLabel(selectedSize) === normalizeSizeLabel(size)} onPress={() => setSelectedSize(size)} />
+            ))}
+          </View>
+
+          <View style={styles.measureGrid}>
+            <MeasurementInput label="Chest" value={sessionChestCm} onChange={setSessionChestCm} />
+            <MeasurementInput label="Waist" value={sessionWaistCm} onChange={setSessionWaistCm} />
+          </View>
+          <View style={styles.measureGrid}>
+            <MeasurementInput label="Hip" value={sessionHipCm} onChange={setSessionHipCm} />
+            <MeasurementInput label="Height" value={sessionHeightCm} onChange={setSessionHeightCm} />
+          </View>
+        </View>
 
         <View style={styles.stage}>
           {mixMode === 'top_bottom' ? (
@@ -206,6 +350,8 @@ export default function MixMatchScreen() {
               <CarouselSlot
                 label="Top"
                 product={selectedTop}
+                currentIndex={topIndex}
+                total={tops.length}
                 emptyText="No active tops yet."
                 onPrevious={() => setTopIndex((current) => wrapIndex(current, tops.length, -1))}
                 onNext={() => setTopIndex((current) => wrapIndex(current, tops.length, 1))}
@@ -217,17 +363,23 @@ export default function MixMatchScreen() {
               <CarouselSlot
                 label="Bottom"
                 product={selectedBottom}
+                currentIndex={bottomIndex}
+                total={bottoms.length}
                 emptyText="No active bottoms yet."
                 onPrevious={() => setBottomIndex((current) => wrapIndex(current, bottoms.length, -1))}
                 onNext={() => setBottomIndex((current) => wrapIndex(current, bottoms.length, 1))}
                 disabled={bottoms.length <= 1}
               />
             </>
-          ) : (
+          ) : null}
+
+          {mixMode === 'dress_top' ? (
             <>
               <CarouselSlot
                 label="Dress"
                 product={selectedDress}
+                currentIndex={dressIndex}
+                total={dresses.length}
                 emptyText="No active dresses yet."
                 onPrevious={() => setDressIndex((current) => wrapIndex(current, dresses.length, -1))}
                 onNext={() => setDressIndex((current) => wrapIndex(current, dresses.length, 1))}
@@ -237,15 +389,46 @@ export default function MixMatchScreen() {
               <View style={styles.separator} />
 
               <CarouselSlot
-                label="Shirt"
+                label="Top"
                 product={selectedShirt}
-                emptyText="No active shirts yet."
+                currentIndex={shirtIndex}
+                total={tops.length}
+                emptyText="No active tops yet."
                 onPrevious={() => setShirtIndex((current) => wrapIndex(current, tops.length, -1))}
                 onNext={() => setShirtIndex((current) => wrapIndex(current, tops.length, 1))}
                 disabled={tops.length <= 1}
               />
             </>
-          )}
+          ) : null}
+
+          {mixMode === 'dress_bottom' ? (
+            <>
+              <CarouselSlot
+                label="Dress"
+                product={selectedDress}
+                currentIndex={dressIndex}
+                total={dresses.length}
+                emptyText="No active dresses yet."
+                onPrevious={() => setDressIndex((current) => wrapIndex(current, dresses.length, -1))}
+                onNext={() => setDressIndex((current) => wrapIndex(current, dresses.length, 1))}
+                disabled={dresses.length <= 1}
+              />
+
+              <View style={styles.separator} />
+
+              <CarouselSlot
+                label="Bottom"
+                product={selectedBottom}
+                currentIndex={bottomIndex}
+                total={bottoms.length}
+                emptyText="No active bottoms yet."
+                onPrevious={() => setBottomIndex((current) => wrapIndex(current, bottoms.length, -1))}
+                onNext={() => setBottomIndex((current) => wrapIndex(current, bottoms.length, 1))}
+                disabled={bottoms.length <= 1}
+              />
+            </>
+          ) : null}
+
         </View>
 
         <Text style={styles.sectionTitle}>Selected items</Text>
@@ -255,12 +438,19 @@ export default function MixMatchScreen() {
               <SelectedRow label="Top" product={selectedTop} />
               <SelectedRow label="Bottom" product={selectedBottom} />
             </>
-          ) : (
+          ) : null}
+          {mixMode === 'dress_top' ? (
             <>
               <SelectedRow label="Dress" product={selectedDress} />
-              <SelectedRow label={`Shirt (${dressShirtStyle})`} product={selectedShirt} />
+              <SelectedRow label={`Top (${dressTopStyle})`} product={selectedShirt} />
             </>
-          )}
+          ) : null}
+          {mixMode === 'dress_bottom' ? (
+            <>
+              <SelectedRow label="Dress" product={selectedDress} />
+              <SelectedRow label={`Bottom (${dressBottomStyle})`} product={selectedBottom} />
+            </>
+          ) : null}
         </View>
 
         <TouchableOpacity
@@ -280,6 +470,8 @@ export default function MixMatchScreen() {
 function CarouselSlot({
   label,
   product,
+  currentIndex,
+  total,
   emptyText,
   onPrevious,
   onNext,
@@ -287,6 +479,8 @@ function CarouselSlot({
 }: {
   label: string;
   product: Product | null;
+  currentIndex: number;
+  total: number;
   emptyText: string;
   onPrevious: () => void;
   onNext: () => void;
@@ -306,7 +500,9 @@ function CarouselSlot({
       </TouchableOpacity>
 
       <View style={styles.itemDisplay}>
-        <Text style={styles.slotLabel}>{label}</Text>
+        <Text style={styles.slotLabel}>
+          {total > 0 ? `${label} ${currentIndex + 1}/${total}` : label}
+        </Text>
         {product ? (
           <>
             <View style={styles.imagePanel}>
@@ -387,6 +583,30 @@ function ModeButton({
   );
 }
 
+function MeasurementInput({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <View style={styles.measureField}>
+      <Text style={styles.measureLabel}>{label} (cm)</Text>
+      <TextInput
+        value={value}
+        onChangeText={onChange}
+        placeholder="0"
+        placeholderTextColor={Colors.text.muted}
+        keyboardType="decimal-pad"
+        style={styles.measureInput}
+      />
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
@@ -460,11 +680,18 @@ const styles = StyleSheet.create({
   },
   modeTabs: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: Spacing.sm,
     marginBottom: Spacing.sm,
   },
   styleTabs: {
     flexDirection: 'row',
+    gap: Spacing.xs,
+    marginBottom: Spacing.md,
+  },
+  sizeTabs: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: Spacing.xs,
     marginBottom: Spacing.md,
   },
@@ -474,7 +701,8 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(206, 232, 255, 0.18)',
     borderRadius: Radius.full,
     borderWidth: 1,
-    flex: 1,
+    flexBasis: '48%',
+    flexGrow: 1,
     minHeight: 38,
     justifyContent: 'center',
     paddingHorizontal: Spacing.sm,
@@ -491,6 +719,59 @@ const styles = StyleSheet.create({
   },
   modeButtonTextActive: {
     color: Colors.white,
+  },
+  measurementBox: {
+    backgroundColor: 'rgba(8, 14, 27, 0.78)',
+    borderColor: Colors.border.subtle,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    marginBottom: Spacing.md,
+    padding: Spacing.md,
+  },
+  measurementHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: Spacing.sm,
+  },
+  measurementHint: {
+    color: '#9AE9F5',
+    fontSize: 10,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+  },
+  measureGrid: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+    marginBottom: Spacing.sm,
+  },
+  measureField: {
+    flex: 1,
+  },
+  measureLabel: {
+    color: Colors.text.secondary,
+    fontSize: 10,
+    fontWeight: '900',
+    marginBottom: 5,
+    textTransform: 'uppercase',
+  },
+  measureInput: {
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderColor: 'rgba(206, 232, 255, 0.28)',
+    borderRadius: Radius.sm,
+    borderWidth: 1,
+    color: Colors.text.primary,
+    fontSize: FontSize.sm,
+    fontWeight: '800',
+    minHeight: 40,
+    paddingHorizontal: Spacing.sm,
+  },
+  boxTitle: {
+    color: Colors.text.primary,
+    fontSize: FontSize.sm,
+    fontWeight: '900',
+    marginBottom: Spacing.sm,
+    textTransform: 'uppercase',
   },
   stage: {
     backgroundColor: 'rgba(26, 34, 53, 0.92)',

@@ -32,12 +32,13 @@ import {
 } from '@/lib/tryOn';
 import { Colors, FontSize, Radius, Spacing } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/useAuthStore';
+import { useTryOnJobStore } from '@/hooks/useTryOnJobStore';
 import { useNav } from '@/context/NavContext';
 
 type TryOnPhase = 'upload' | 'generating' | 'result';
 type PhotoGuideMode = 'full' | 'top';
-type MixMatchMode = 'top_bottom' | 'dress_shirt';
-type LayeringStyle = 'layered' | 'tucked' | 'under';
+type MixMatchMode = 'top_bottom' | 'dress_shirt' | 'dress_top' | 'dress_bottom';
+type LayeringStyle = 'layered' | 'tucked' | 'over' | 'under';
 
 type Product = {
   id: string;
@@ -704,13 +705,18 @@ function MeasurementInput({
 export default function TryOnScreen() {
   const router = useRouter();
   const { openNav } = useNav();
-  const { productId, productIds, mixMatchMode, layeringStyle } = useLocalSearchParams<{
+  const { productId, productIds, mixMatchMode, layeringStyle, bodyChestCm, bodyWaistCm, bodyHipCm, bodyHeightCm } = useLocalSearchParams<{
     productId?: string;
     productIds?: string;
     mixMatchMode?: string;
     layeringStyle?: string;
+    bodyChestCm?: string;
+    bodyWaistCm?: string;
+    bodyHipCm?: string;
+    bodyHeightCm?: string;
   }>();
   const { user, token } = useAuthStore();
+  const tryOnJob = useTryOnJobStore();
   const [phase, setPhase] = useState<TryOnPhase>('upload');
   const [products, setProducts] = useState<Product[]>([]);
   const [savedItems, setSavedItems] = useState<Product[]>([]);
@@ -731,6 +737,7 @@ export default function TryOnScreen() {
   const [portraitAspectRatio, setPortraitAspectRatio] = useState(1);
   const loadingDotScales = useRef([new Animated.Value(1), new Animated.Value(1), new Animated.Value(1)]).current;
   const progressAnim = useRef(new Animated.Value(0)).current;
+  const mountedRef = useRef(true);
   const progressFillWidth = progressAnim.interpolate({
     inputRange: [0, 100],
     outputRange: ['0%', '100%'],
@@ -746,7 +753,56 @@ export default function TryOnScreen() {
     }).start();
   }, [progressAnim]);
 
-  const resetTryOnFlow = useCallback((clearPortrait = false) => {
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (tryOnJob.status === 'idle') return;
+    if ((productIds ?? productId ?? '').trim()) return;
+
+    if (tryOnJob.selectedProducts.length) {
+      setSelectedProducts(tryOnJob.selectedProducts as Product[]);
+    }
+    if (tryOnJob.personUri) {
+      setPersonUri(tryOnJob.personUri);
+    }
+    setTryOnResult(tryOnJob.result);
+    setDisplayResultUri(tryOnJob.displayResultUri);
+    setGenerationProgress(tryOnJob.progress);
+    progressAnim.setValue(tryOnJob.progress);
+
+    if (tryOnJob.status === 'generating') {
+      setPhase('generating');
+      setGenerating(true);
+    } else if (tryOnJob.status === 'result') {
+      setPhase('result');
+      setGenerating(false);
+    } else if (tryOnJob.status === 'error') {
+      setError(tryOnJob.error);
+      setPhase('upload');
+      setGenerating(false);
+    }
+  }, [
+    progressAnim,
+    productId,
+    productIds,
+    tryOnJob.displayResultUri,
+    tryOnJob.error,
+    tryOnJob.personUri,
+    tryOnJob.progress,
+    tryOnJob.result,
+    tryOnJob.selectedProducts,
+    tryOnJob.status,
+  ]);
+
+  const resetTryOnFlow = useCallback((clearPortrait = false, clearJob = true) => {
+    if (clearJob) {
+      useTryOnJobStore.getState().clear();
+    }
     setPhase('upload');
     setTryOnResult(null);
     setDisplayResultUri('');
@@ -783,8 +839,8 @@ export default function TryOnScreen() {
       return;
     }
 
-    if (selectedProducts.length >= 2) {
-      Alert.alert('Two-item limit', 'You can use up to two products in one try-on.');
+    if (selectedProducts.length >= 3) {
+      Alert.alert('Three-item limit', 'You can use up to three products in one try-on.');
       return;
     }
 
@@ -792,7 +848,7 @@ export default function TryOnScreen() {
     const hydrated = await hydrateProduct(product);
     if (!hydrated) return;
     setSelectedProducts((current) => {
-      if (current.some((item) => String(item.id) === String(hydrated.id)) || current.length >= 2) {
+      if (current.some((item) => String(item.id) === String(hydrated.id)) || current.length >= 3) {
         return current;
       }
       return [...current, hydrated];
@@ -810,10 +866,10 @@ export default function TryOnScreen() {
         .split(',')
         .map((id) => id.trim())
         .filter(Boolean)
-        .slice(0, 2);
+        .slice(0, 3);
 
       if (requestedProductIds.length) {
-        resetTryOnFlow(true);
+        resetTryOnFlow(true, false);
       }
 
       const [allProducts, saved] = await Promise.all([
@@ -834,10 +890,26 @@ export default function TryOnScreen() {
 
       setProducts(activeProducts);
       setSavedItems(saved);
+
+      const storedJob = useTryOnJobStore.getState();
+      if (!requestedProductIds.length && storedJob.status !== 'idle' && storedJob.selectedProducts.length) {
+        setSelectedProducts(storedJob.selectedProducts as Product[]);
+        setPersonUri(storedJob.personUri);
+        setTryOnResult(storedJob.result);
+        setDisplayResultUri(storedJob.displayResultUri);
+        setGenerationProgress(storedJob.progress);
+        progressAnim.setValue(storedJob.progress);
+        setPhase(storedJob.status === 'result' ? 'result' : storedJob.status === 'generating' ? 'generating' : 'upload');
+        if (storedJob.status === 'error') {
+          setError(storedJob.error);
+        }
+        return;
+      }
+
       const hydratedInitialProducts = await Promise.all(
         initialProducts.map((product) => hydrateProduct(product)),
       );
-      setSelectedProducts(hydratedInitialProducts.filter((product): product is Product => !!product).slice(0, 2));
+      setSelectedProducts(hydratedInitialProducts.filter((product): product is Product => !!product).slice(0, 3));
     };
 
     load()
@@ -846,11 +918,15 @@ export default function TryOnScreen() {
   }, [productId, productIds, resetTryOnFlow, token, user?.user_id]);
 
   useEffect(() => {
-    setSessionChestCm(String(user?.body_chest_cm ?? ''));
-    setSessionWaistCm(String(user?.body_waist_cm ?? ''));
-    setSessionHipCm(String(user?.body_hip_cm ?? ''));
-    setSessionHeightCm(String(user?.body_height_cm ?? ''));
+    setSessionChestCm(String(bodyChestCm ?? user?.body_chest_cm ?? ''));
+    setSessionWaistCm(String(bodyWaistCm ?? user?.body_waist_cm ?? ''));
+    setSessionHipCm(String(bodyHipCm ?? user?.body_hip_cm ?? ''));
+    setSessionHeightCm(String(bodyHeightCm ?? user?.body_height_cm ?? ''));
   }, [
+    bodyChestCm,
+    bodyHeightCm,
+    bodyHipCm,
+    bodyWaistCm,
     user?.body_chest_cm,
     user?.body_height_cm,
     user?.body_hip_cm,
@@ -912,12 +988,20 @@ export default function TryOnScreen() {
     body_hip_cm: toNullableNumber(sessionHipCm),
     body_height_cm: toNullableNumber(sessionHeightCm),
   };
-  const activeMixMatchMode: MixMatchMode | null = mixMatchMode === 'dress_shirt' || mixMatchMode === 'top_bottom'
-    ? mixMatchMode
-    : null;
-  const activeLayeringStyle: LayeringStyle = layeringStyle === 'tucked' || layeringStyle === 'under'
-    ? layeringStyle
-    : 'layered';
+  const activeMixMatchMode: MixMatchMode | null =
+    mixMatchMode === 'dress_shirt' ||
+    mixMatchMode === 'dress_top' ||
+    mixMatchMode === 'dress_bottom' ||
+    mixMatchMode === 'top_bottom'
+      ? mixMatchMode
+      : null;
+  const activeLayeringStyle: LayeringStyle =
+    layeringStyle === 'tucked' ||
+    layeringStyle === 'under' ||
+    layeringStyle === 'over' ||
+    layeringStyle === 'layered'
+      ? layeringStyle
+      : 'over';
   const aiReport = (reportText(tryOnResult) || buildOutfitFitReport(selectedProducts, sessionBodyProfile)).replace(
     /based on the admin body reference/gi,
     'based on the product measurements',
@@ -1004,6 +1088,7 @@ export default function TryOnScreen() {
     setGenerationProgress(0);
     progressAnim.setValue(0);
     animateGenerationProgress(2, 220);
+    tryOnJob.start({ personUri, selectedProducts });
     setError('');
 
     try {
@@ -1017,9 +1102,19 @@ export default function TryOnScreen() {
         const garmentUri = await cacheRemoteImage(rawGarmentUri, `tryon-${product.id}.jpg`);
         const fitReport = buildMeasurementFitReport(product, sessionBodyProfile);
         const fitHeadlineText = fitHeadline(fitReport);
+        const productCategory = tryOnCategory(product.category, product.categorySlug, primaryGarmentType(product), product.name);
+        const isTuckedDressBottomDressPass =
+          activeMixMatchMode === 'dress_bottom' &&
+          activeLayeringStyle === 'under' &&
+          index === 0 &&
+          productCategory === 'one-pieces';
+        const generationCategory = isTuckedDressBottomDressPass ? 'tops' : productCategory;
         const updateOverallProgress = (jobPercent: number) => {
           const overallPercent = ((index + jobPercent / 100) / selectedProducts.length) * 100;
-          animateGenerationProgress(overallPercent);
+          useTryOnJobStore.getState().setProgress(overallPercent);
+          if (mountedRef.current) {
+            animateGenerationProgress(overallPercent);
+          }
         };
         const progressInterval = setInterval(() => {
           getTryOnProgress(jobId)
@@ -1042,13 +1137,13 @@ export default function TryOnScreen() {
             jobId,
             personUri: currentPersonUri,
             garmentUri,
-            category: tryOnCategory(product.category, product.categorySlug, primaryGarmentType(product), product.name),
+            category: generationCategory,
             productName: product.name,
             garmentName: product.name,
-            garmentType: primaryGarmentType(product),
-            productType: product.category,
+            garmentType: isTuckedDressBottomDressPass ? 'top' : primaryGarmentType(product),
+            productType: isTuckedDressBottomDressPass ? 'Top' : product.category,
             mixMatchMode: activeMixMatchMode,
-            layeringStyle: activeMixMatchMode === 'dress_shirt' ? activeLayeringStyle : null,
+            layeringStyle: activeMixMatchMode?.startsWith('dress_') ? activeLayeringStyle : null,
             fitStatus: fitHeadlineText,
             fitScore: fitScoreFromHeadline(fitHeadlineText),
             fitSummary: fitReport,
@@ -1065,19 +1160,27 @@ export default function TryOnScreen() {
         finalResult = result;
       }
 
-      setTryOnResult(finalResult);
-      setDisplayResultUri(finalResultUri);
-      animateGenerationProgress(100, 260);
-      setPhase('result');
+      useTryOnJobStore.getState().complete({ result: finalResult, displayResultUri: finalResultUri });
+      if (mountedRef.current) {
+        setTryOnResult(finalResult);
+        setDisplayResultUri(finalResultUri);
+        animateGenerationProgress(100, 260);
+        setPhase('result');
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Could not generate the try-on result.';
-      setError(message);
-      progressAnim.setValue(0);
-      setGenerationProgress(0);
-      setPhase('upload');
-      Alert.alert('Try-on failed', message);
+      useTryOnJobStore.getState().fail(message);
+      if (mountedRef.current) {
+        setError(message);
+        progressAnim.setValue(0);
+        setGenerationProgress(0);
+        setPhase('upload');
+        Alert.alert('Try-on failed', message);
+      }
     } finally {
-      setGenerating(false);
+      if (mountedRef.current) {
+        setGenerating(false);
+      }
     }
   };
 
@@ -1275,6 +1378,14 @@ export default function TryOnScreen() {
                 <Animated.View style={[styles.progressPercentFill, { width: progressFillWidth }]} />
               </View>
               <Text style={styles.generatingFootnote}>{generationProgress}% complete</Text>
+              <TouchableOpacity
+                style={styles.backgroundBrowseButton}
+                onPress={() => router.push('/(tabs)/catalog')}
+                activeOpacity={0.82}
+              >
+                <Ionicons name="grid-outline" size={16} color={Colors.text.primary} />
+                <Text style={styles.secondaryActionText}>Browse while waiting</Text>
+              </TouchableOpacity>
             </View>
           ) : null}
 
@@ -2079,6 +2190,18 @@ const styles = StyleSheet.create({
     fontSize: FontSize.sm,
     fontWeight: '800',
     marginTop: Spacing.sm,
+  },
+  backgroundBrowseButton: {
+    alignItems: 'center',
+    alignSelf: 'center',
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderRadius: Radius.full,
+    flexDirection: 'row',
+    gap: Spacing.sm,
+    justifyContent: 'center',
+    marginTop: Spacing.lg,
+    minHeight: 44,
+    paddingHorizontal: Spacing.lg,
   },
   progressPercentTrack: {
     backgroundColor: 'rgba(255,255,255,0.16)',

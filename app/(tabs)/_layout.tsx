@@ -3,6 +3,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { View } from 'react-native';
 import { SideNav } from '@/components/ui/SideNav';
 import { HamburgerButton } from '@/components/ui/HamburgerButton';
+import { TryOnDock } from '@/components/ui/TryOnDock';
 import { NavProvider, useNav } from '@/context/NavContext';
 
 function TabsContent() {
@@ -34,6 +35,7 @@ function TabsContent() {
         <Tabs.Screen name="mix-match" options={{ title: 'Mix & Match', headerShown: false, tabBarButton: () => null }} />
         <Tabs.Screen name="try-on" options={{ title: 'Try On', headerShown: false, tabBarButton: () => null }} />
       </Tabs>
+      <TryOnDock />
       <SideNav visible={isNavOpen} onClose={closeNav} />
     </View>
   );
