@@ -184,12 +184,12 @@ export async function submitTryOn({
     uri: personUri,
     name: 'person.jpg',
     type: 'image/jpeg',
-  } as unknown as Blob);
+  } as unknown as string);
   form.append('garment_image', {
     uri: garmentUri,
     name: 'garment.jpg',
     type: 'image/jpeg',
-  } as unknown as Blob);
+  } as unknown as string);
   form.append('category', category ?? 'auto');
   form.append('garment_photo_type', garmentPhotoType);
   if (mixMatchMode) form.append('mix_match_mode', mixMatchMode);
@@ -206,16 +206,7 @@ export async function submitTryOn({
   if (bodyMeasurements) form.append('body_measurements', JSON.stringify(bodyMeasurements));
   if (garmentMeasurements) form.append('garment_measurements', JSON.stringify(garmentMeasurements));
 
-  const response = await fetch(`${API_BASE_URL}/tryon/upload`, {
-    method: 'POST',
-    headers: {
-      'ngrok-skip-browser-warning': 'true',
-      'User-Agent': 'AFRO-React-Native-TryOn',
-    },
-    body: form,
-  });
-
-  const text = await response.text();
+  const { ok, text } = await uploadTryOnForm(`${API_BASE_URL}/tryon/upload`, form);
   let data: TryOnResult & { detail?: string; message?: string };
 
   try {
@@ -224,7 +215,7 @@ export async function submitTryOn({
     throw new Error(`Try-on API returned non-JSON response: ${text.slice(0, 120)}`);
   }
 
-  if (!response.ok) {
+  if (!ok) {
     throw new Error(data.detail ?? data.message ?? 'Try-on generation failed.');
   }
 
@@ -239,6 +230,27 @@ export async function submitTryOn({
   }
 
   return data;
+}
+
+function uploadTryOnForm(url: string, form: FormData) {
+  return new Promise<{ ok: boolean; text: string }>((resolve, reject) => {
+    const request = new XMLHttpRequest();
+
+    request.open('POST', url);
+    request.setRequestHeader('ngrok-skip-browser-warning', 'true');
+    request.setRequestHeader('User-Agent', 'AFRO-React-Native-TryOn');
+    request.onload = () => {
+      resolve({
+        ok: request.status >= 200 && request.status < 300,
+        text: request.responseText ?? '',
+      });
+    };
+    request.onerror = () =>
+      reject(new Error('Could not reach the try-on API. Keep the API terminal running and make sure your phone stays on the same Wi-Fi.'));
+    request.ontimeout = () => reject(new Error('Try-on API request timed out. The AI generation took too long to respond.'));
+    request.timeout = 600000;
+    request.send(form);
+  });
 }
 
 export async function getTryOnProgress(jobId: string): Promise<TryOnProgress | null> {

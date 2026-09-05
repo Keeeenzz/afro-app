@@ -362,17 +362,13 @@ export default function CatalogScreen() {
   const filteredProducts = useMemo(() => {
     const term = search.trim().toLowerCase();
     const selectedToneColors = toneColorNames.map(normalizeColorName).filter(Boolean);
-    const prescribedSize =
-      selectedToneColors.length && user?.preferred_size ? normalizeSizeLabel(user.preferred_size) : null;
-    const selectedSize = sizeLabel === 'all' ? prescribedSize : normalizeSizeLabel(sizeLabel);
+    const selectedSize = sizeLabel === 'all' ? null : normalizeSizeLabel(sizeLabel);
     const skinMatchedTopColors = products
       .filter((product) => isTopProduct(product) && colorNamesOverlap(selectedToneColors, productColorNames(product)))
       .flatMap(productColorNames);
     const bottomReferenceColors = skinMatchedTopColors.length
       ? bottomHarmonyColorsForTop(skinMatchedTopColors)
-      : selectedToneColors.length
-        ? NEUTRAL_BOTTOM_COLORS
-        : [];
+      : [];
 
     const filtered = products.filter((product) => {
       const sizes = productSizeLabels(product).map(normalizeSizeLabel).filter(Boolean);
@@ -392,11 +388,11 @@ export default function CatalogScreen() {
         .join(' ')
         .toLowerCase();
       const colors = productColorNames(product);
-      const isSkinAnchoredProduct = isTopProduct(product) || isDressProduct(product);
-      const matchesSkinToTop =
-        !selectedToneColors.length || !isSkinAnchoredProduct || colorNamesOverlap(selectedToneColors, colors);
-      const matchesTopToBottom =
-        !selectedToneColors.length || !isBottomProduct(product) || colorNamesOverlap(bottomReferenceColors, colors);
+      const isSkinToneMatchedProduct = isTopProduct(product) || isDressProduct(product);
+      const matchesSkinToneColors =
+        !selectedToneColors.length ||
+        (isSkinToneMatchedProduct && colorNamesOverlap(selectedToneColors, colors)) ||
+        (isBottomProduct(product) && colorNamesOverlap(bottomReferenceColors, colors));
       const matchesSelectedSize =
         !selectedSize || (sizes.includes(selectedSize) && (!explicitNameSize || explicitNameSize === selectedSize));
 
@@ -406,8 +402,7 @@ export default function CatalogScreen() {
         matchesSelectedSize &&
         (genderId === 'all' || String(product.genderId) === String(genderId)) &&
         (colorFamilyId === 'all' || String(product.colorFamilyId) === String(colorFamilyId)) &&
-        matchesSkinToTop &&
-        matchesTopToBottom &&
+        matchesSkinToneColors &&
         (!inStockOnly || product.qty > 0)
       );
     });
@@ -427,7 +422,6 @@ export default function CatalogScreen() {
     sizeLabel,
     sort,
     toneColorNames,
-    user?.preferred_size,
   ]);
 
   const totalPages = Math.max(1, Math.ceil(filteredProducts.length / PRODUCTS_PER_PAGE));
@@ -548,7 +542,7 @@ export default function CatalogScreen() {
                 </Text>
                 <Text style={styles.toneText} numberOfLines={1}>
                   {toneColorNames.length
-                    ? `${toneColorNames.slice(0, 4).join(', ')}${user?.preferred_size ? ` / size ${user.preferred_size}` : ''}`
+                    ? `${toneColorNames.slice(0, 4).join(', ')} / matched looks`
                     : 'Analyze a photo to filter catalog colors'}
                 </Text>
               </View>
@@ -638,7 +632,6 @@ export default function CatalogScreen() {
           <ProductCard
             product={item}
             isSaved={savedIds.has(item.id)}
-            prescribedSize={toneColorNames.length ? user?.preferred_size ?? null : null}
             onToggleSaved={() => toggleSaved(item.id)}
             onTryOn={() =>
               router.push({
@@ -753,22 +746,18 @@ function PaginationControls({
 function ProductCard({
   product,
   isSaved,
-  prescribedSize,
   onToggleSaved,
   onTryOn,
 }: {
   product: Product;
   isSaved: boolean;
-  prescribedSize?: string | null;
   onToggleSaved: () => void;
   onTryOn: () => void;
 }) {
   const router = useRouter();
   const uri = imageUrl(product.imageUrl);
   const sizes = productSizeLabels(product);
-  const normalizedPrescribedSize = normalizeSizeLabel(prescribedSize);
-  const matchedSize = sizes.find((size) => normalizeSizeLabel(size) === normalizedPrescribedSize);
-  const primarySize = matchedSize ?? sizes[0];
+  const primarySize = sizes[0];
   const soldOut = product.qty <= 0;
 
   return (
