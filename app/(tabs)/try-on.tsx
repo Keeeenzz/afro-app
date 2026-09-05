@@ -615,7 +615,7 @@ function FitReport({
   return (
     <View style={styles.reportBox}>
       <View style={styles.reportHeader}>
-        <Text style={styles.boxTitle}>Fit report</Text>
+        <Text style={styles.reportTitle}>FIT REPORT</Text>
         <View style={styles.reportPager}>
           <TouchableOpacity
             style={[styles.reportPagerButton, !canGoBack && styles.reportPagerButtonDisabled]}
@@ -642,7 +642,7 @@ function FitReport({
       {summary ? <Text style={styles.reportSummary}>{summary}</Text> : null}
 
       {metaItems.length ? (
-        <View style={styles.reportMetaRow}>
+        <View style={styles.reportMetaList}>
           {metaItems.map((item) => (
             <Text key={item.label} style={styles.reportMetaText}>
               <Text style={styles.reportMetaLabel}>{item.label}: </Text>
@@ -2277,12 +2277,13 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   reportBox: {
-    backgroundColor: 'rgba(8, 14, 27, 0.78)',
-    borderColor: Colors.border.subtle,
+    backgroundColor: '#07111F',
+    borderColor: 'rgba(255,255,255,0.08)',
     borderRadius: Radius.md,
     borderWidth: 1,
     marginBottom: Spacing.md,
-    padding: Spacing.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.lg,
   },
   reportHeader: {
     alignItems: 'center',
@@ -2290,6 +2291,12 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
     justifyContent: 'space-between',
     marginBottom: Spacing.sm,
+  },
+  reportTitle: {
+    color: Colors.text.primary,
+    fontSize: FontSize.md,
+    fontWeight: '900',
+    letterSpacing: 0,
   },
   reportPager: {
     alignItems: 'center',
@@ -2299,59 +2306,58 @@ const styles = StyleSheet.create({
   },
   reportPagerButton: {
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.14)',
+    backgroundColor: 'rgba(255,255,255,0.12)',
     borderRadius: Radius.full,
-    height: 28,
+    height: 34,
     justifyContent: 'center',
-    width: 28,
+    width: 34,
   },
   reportPagerButtonDisabled: {
     opacity: 0.28,
   },
   reportScore: {
-    backgroundColor: 'rgba(34, 211, 238, 0.16)',
-    borderColor: 'rgba(154, 233, 245, 0.35)',
+    backgroundColor: 'rgba(17, 91, 111, 0.62)',
+    borderColor: 'rgba(154, 233, 245, 0.42)',
     borderRadius: Radius.full,
     borderWidth: 1,
     color: '#9AE9F5',
     flexShrink: 1,
-    fontSize: FontSize.xs,
+    fontSize: FontSize.sm,
     fontWeight: '900',
     overflow: 'hidden',
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 4,
-    textAlign: 'right',
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 6,
+    textAlign: 'center',
   },
   reportHeadline: {
     color: Colors.text.primary,
-    fontSize: FontSize.sm,
+    fontSize: FontSize.md,
     fontWeight: '900',
-    lineHeight: 20,
+    lineHeight: 22,
     marginBottom: Spacing.sm,
     textAlign: 'center',
   },
   reportSummary: {
     color: Colors.text.primary,
-    fontSize: FontSize.sm,
+    fontSize: FontSize.md,
     fontWeight: '800',
-    lineHeight: 20,
-    marginBottom: Spacing.sm,
+    lineHeight: 24,
+    marginBottom: Spacing.md,
     textAlign: 'center',
   },
-  reportMetaRow: {
+  reportMetaList: {
     alignItems: 'center',
     borderBottomColor: 'rgba(255,255,255,0.16)',
     borderBottomWidth: 1,
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: Spacing.sm,
+    gap: 8,
     justifyContent: 'center',
-    paddingBottom: Spacing.sm,
+    paddingBottom: Spacing.md,
   },
   reportMetaText: {
     color: Colors.text.primary,
-    fontSize: FontSize.xs,
-    lineHeight: 18,
+    fontSize: FontSize.sm,
+    lineHeight: 20,
+    textAlign: 'center',
   },
   reportMetaLabel: {
     fontWeight: '900',
@@ -2360,47 +2366,47 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderBottomColor: 'rgba(255,255,255,0.16)',
     borderBottomWidth: 1,
-    paddingVertical: Spacing.sm,
+    paddingVertical: Spacing.md,
   },
   reportMeasurementsTitle: {
     color: Colors.text.primary,
-    fontSize: FontSize.xs,
+    fontSize: FontSize.sm,
     fontWeight: '900',
-    marginBottom: 4,
+    marginBottom: 6,
   },
   reportMeasurementsText: {
     color: Colors.text.primary,
-    fontSize: FontSize.xs,
-    lineHeight: 18,
+    fontSize: FontSize.sm,
+    lineHeight: 20,
     textAlign: 'center',
   },
   reportSections: {
-    gap: Spacing.sm,
-    paddingTop: Spacing.sm,
+    gap: Spacing.md,
+    paddingTop: Spacing.md,
   },
   reportSection: {
     borderBottomColor: 'rgba(255,255,255,0.14)',
     borderBottomWidth: 1,
-    paddingBottom: Spacing.sm,
+    paddingBottom: Spacing.md,
   },
   reportSectionTitle: {
     color: Colors.text.primary,
-    fontSize: FontSize.xs,
+    fontSize: FontSize.md,
     fontWeight: '900',
-    lineHeight: 18,
-    marginBottom: 5,
+    lineHeight: 22,
+    marginBottom: 8,
   },
   reportReasonLabel: {
     color: Colors.text.primary,
-    fontSize: FontSize.xs,
+    fontSize: FontSize.sm,
     fontWeight: '900',
-    marginBottom: 4,
+    marginBottom: 6,
   },
   reportReasonText: {
     color: Colors.text.secondary,
-    fontSize: FontSize.xs,
-    lineHeight: 18,
-    marginBottom: 4,
+    fontSize: FontSize.sm,
+    lineHeight: 22,
+    marginBottom: 6,
   },
   bottomActions: {
     flexDirection: 'row',
