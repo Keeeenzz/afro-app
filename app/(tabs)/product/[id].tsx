@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  Modal,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -92,6 +93,7 @@ export default function ProductOverviewScreen() {
   const [error, setError] = useState('');
   const [selectedImage, setSelectedImage] = useState('');
   const [selectedSizeId, setSelectedSizeId] = useState<number | string | null>(null);
+  const [cartNotice, setCartNotice] = useState<{ name: string; size: string | null } | null>(null);
 
   const loadProduct = async () => {
     if (!id) return;
@@ -111,10 +113,15 @@ export default function ProductOverviewScreen() {
     const primaryImage = item.images?.[0]?.imageUrl ?? item.imageUrl ?? '';
     setSelectedImage(primaryImage);
     const firstAvailableSize = item.sizeStock?.find((size) => Number(size.stockQty) > 0);
-    setSelectedSizeId((current) => current ?? firstAvailableSize?.sizeId ?? item.sizeId ?? null);
+    setSelectedSizeId(firstAvailableSize?.sizeId ?? item.sizeId ?? null);
   };
 
   useEffect(() => {
+    setLoading(true);
+    setProduct(null);
+    setSelectedImage('');
+    setSelectedSizeId(null);
+    setCartNotice(null);
     loadProduct()
       .catch((err) => setError(err instanceof Error ? err.message : 'Could not load product.'))
       .finally(() => setLoading(false));
@@ -191,7 +198,7 @@ export default function ProductOverviewScreen() {
         },
         token,
       );
-      Alert.alert('Added to cart', `${product.name}${selectedSizeLabel ? ` - ${selectedSizeLabel}` : ''} is in your cart.`);
+      setCartNotice({ name: product.name, size: selectedSizeLabel });
     } catch (err) {
       Alert.alert('Could not add item', err instanceof Error ? err.message : 'Please try again.');
     } finally {
@@ -422,7 +429,7 @@ export default function ProductOverviewScreen() {
             ) : (
               <>
                 <Ionicons name="chatbubble-ellipses-outline" size={18} color={Colors.text.primary} />
-                <Text style={styles.tryOnText}>Inquire</Text>
+                <Text style={styles.tryOnText}>Message</Text>
               </>
             )}
           </TouchableOpacity>
@@ -442,6 +449,39 @@ export default function ProductOverviewScreen() {
           </TouchableOpacity>
         </View>
       ) : null}
+
+      <Modal transparent visible={!!cartNotice} animationType="fade" onRequestClose={() => setCartNotice(null)}>
+        <View style={styles.noticeOverlay}>
+          <View style={styles.noticeCard}>
+            <View style={styles.noticeIcon}>
+              <Ionicons name="checkmark" size={34} color={Colors.white} />
+            </View>
+            <Text style={styles.noticeTitle}>Added to Cart</Text>
+            <Text style={styles.noticeText}>
+              {cartNotice?.name}
+              {cartNotice?.size ? ` - ${cartNotice.size}` : ''} is ready in your cart.
+            </Text>
+            <TouchableOpacity
+              style={styles.noticePrimary}
+              onPress={() => {
+                setCartNotice(null);
+                router.push('/(tabs)/cart');
+              }}
+              activeOpacity={0.84}
+            >
+              <Ionicons name="cart-outline" size={18} color={Colors.white} />
+              <Text style={styles.noticePrimaryText}>My Cart</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.noticeSecondary}
+              onPress={() => setCartNotice(null)}
+              activeOpacity={0.84}
+            >
+              <Text style={styles.noticeSecondaryText}>Continue Browsing</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -789,6 +829,75 @@ const styles = StyleSheet.create({
   },
   disabledButton: {
     opacity: 0.45,
+  },
+  noticeOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(4, 8, 18, 0.72)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: Spacing.lg,
+  },
+  noticeCard: {
+    width: '100%',
+    maxWidth: 340,
+    borderRadius: Radius.lg,
+    borderWidth: 1,
+    borderColor: Colors.border.active,
+    backgroundColor: 'rgba(25, 39, 58, 0.98)',
+    padding: Spacing.lg,
+    alignItems: 'center',
+  },
+  noticeIcon: {
+    width: 66,
+    height: 66,
+    borderRadius: 33,
+    backgroundColor: '#0B809A',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: Spacing.md,
+  },
+  noticeTitle: {
+    color: Colors.text.primary,
+    fontSize: FontSize.xl,
+    fontWeight: '900',
+    marginBottom: Spacing.xs,
+  },
+  noticeText: {
+    color: Colors.text.secondary,
+    fontSize: FontSize.sm,
+    lineHeight: 21,
+    textAlign: 'center',
+    marginBottom: Spacing.lg,
+  },
+  noticePrimary: {
+    width: '100%',
+    height: 48,
+    borderRadius: Radius.md,
+    backgroundColor: '#0B809A',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.sm,
+    marginBottom: Spacing.sm,
+  },
+  noticePrimaryText: {
+    color: Colors.white,
+    fontSize: FontSize.sm,
+    fontWeight: '900',
+  },
+  noticeSecondary: {
+    width: '100%',
+    height: 48,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: Colors.border.active,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  noticeSecondaryText: {
+    color: Colors.text.primary,
+    fontSize: FontSize.sm,
+    fontWeight: '900',
   },
   empty: {
     flex: 1,

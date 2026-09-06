@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Image,
   KeyboardAvoidingView,
   Platform,
@@ -14,7 +15,8 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
-import { apiGet, apiPost, imageUrl } from '@/lib/api';
+import { apiDelete, apiGet, apiPost, imageUrl } from '@/lib/api';
+import { containsProfanity, PROFANITY_ERROR } from '@/lib/profanity';
 import { Colors, FontSize, Radius, Spacing } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/useAuthStore';
 
@@ -28,10 +30,16 @@ type ChatMessage = {
 };
 
 type ChatProduct = {
+  id: string;
   name: string;
   price: string;
   orderId: string;
+  sizeId?: number | string | null;
   imageUrl?: string | null;
+  isInCart?: boolean;
+  action?: 'add' | 'buy' | 'track' | 'review';
+  placedOrderId?: string | null;
+  reviewed?: boolean;
 };
 
 type Conversation = {
@@ -41,10 +49,17 @@ type Conversation = {
   time: string;
   unread: number;
   messages: ChatMessage[];
+  isAi?: boolean;
+  type?: 'support' | 'ai';
   product?: ChatProduct | null;
 };
 
 type FilterMode = 'Newest' | 'Oldest' | 'Unread';
+
+function isAiConversation(conversation: Conversation | null) {
+  if (!conversation) return false;
+  return Boolean(conversation.isAi || conversation.type === 'ai' || /ai assistant/i.test(conversation.name));
+}
 
 export default function MessagesScreen() {
   const router = useRouter();
@@ -58,6 +73,9 @@ export default function MessagesScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [sending, setSending] = useState(false);
+  const [productActionBusy, setProductActionBusy] = useState(false);
+  const [deletingId, setDeletingId] = useState('');
+  const [startingAi, setStartingAi] = useState(false);
   const [draft, setDraft] = useState('');
   const [query, setQuery] = useState('');
   const [filterMode, setFilterMode] = useState<FilterMode>('Newest');
@@ -100,6 +118,7 @@ export default function MessagesScreen() {
   }, [activeId, conversations]);
 
   const activeConversation = conversations.find((item) => item.id === activeId) ?? null;
+  const activeIsAi = isAiConversation(activeConversation);
 
   useEffect(() => {
     navigation.setOptions({
@@ -121,6 +140,12 @@ export default function MessagesScreen() {
 
     return filterMode === 'Oldest' ? [...filtered].reverse() : filtered;
   }, [conversations, filterMode, query]);
+  const hasAiConversation = useMemo(() => conversations.some(isAiConversation), [conversations]);
+  const showAiContact = useMemo(() => {
+    if (hasAiConversation || filterMode === 'Unread') return false;
+    const needle = query.trim().toLowerCase();
+    return !needle || 'ai assistant'.includes(needle) || 'style help'.includes(needle);
+  }, [filterMode, hasAiConversation, query]);
 
   const refresh = async () => {
     setRefreshing(true);
@@ -136,6 +161,11 @@ export default function MessagesScreen() {
   const sendMessage = async () => {
     const text = draft.trim();
     if (!text || !activeConversation || !user?.user_id || sending) return;
+
+    if (containsProfanity(text)) {
+      Alert.alert('Message not sent', PROFANITY_ERROR);
+      return;
+    }
 
     setDraft('');
     setSending(true);
@@ -164,6 +194,11 @@ export default function MessagesScreen() {
     setConversations((current) =>
       current.map((item) => (item.id === id ? { ...item, unread: 0 } : item)),
     );
+    
+    const selectedConversation = conversations.find((item) => item.id === id);
+if (isAiConversation(selectedConversation ?? null)) {
+  return;
+}
 
     if (user?.user_id) {
       apiPost(`/chat/conversations/${id}/read`, { userId: user.user_id }, token)
@@ -177,6 +212,116 @@ export default function MessagesScreen() {
     }
   };
 
+  const openAiAssistant = async () => {
+    if (!user?.user_id || startingAi) return;
+
+    setStartingAi(true);
+    setError('');
+    try {
+      const conversation = await apiPost<Conversation>(
+        '/chat/conversations',
+        { userId: user.user_id, productId: 'gemini-bot' },
+        token,
+      );
+      setConversations((current) => {
+        const next = current.filter((item) => item.id !== conversation.id);
+        return [conversation, ...next];
+      });
+      setActiveId(conversation.id);
+      router.setParams({ conversationId: conversation.id });
+    } catch (err) {
+      Alert.alert('Could not open AI Assistant', err instanceof Error ? err.message : 'Please try again.');
+    } finally {
+      setStartingAi(false);
+    }
+  };
+
+  const deleteConversationForMe = async (id: string) => {
+    if (!user?.user_id || deletingId) return;
+
+    const previous = conversations;
+    setDeletingId(id);
+    setConversations((current) => current.filter((item) => item.id !== id));
+    if (activeId === id) {
+      setActiveId(null);
+      router.setParams({ conversationId: undefined });
+    }
+
+    try {
+      await apiDelete(
+        `/chat/users/${user.user_id}/conversations/${id}`,
+        { userId: user.user_id, scope: 'self', viewer: 'customer' },
+        token,
+      );
+    } catch (err) {
+      setConversations(previous);
+      Alert.alert('Could not delete chat', err instanceof Error ? err.message : 'Please try again.');
+    } finally {
+      setDeletingId('');
+    }
+  };
+
+  const confirmDeleteConversation = (id: string) => {
+    Alert.alert(
+      'Delete chat?',
+      'This only removes the chat from your messages. Support will still keep their copy.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: () => deleteConversationForMe(id) },
+      ],
+    );
+  };
+
+  const addProductToCart = async (product: ChatProduct) => {
+    if (!user?.user_id) {
+      Alert.alert('Login required', 'Please login before adding products to your cart.');
+      return false;
+    }
+
+    if (!product.sizeId) {
+      Alert.alert('Item unavailable', 'This product has no available size right now.');
+      return false;
+    }
+
+    try {
+      await apiPost(
+        '/cart/items',
+        { userId: user.user_id, productId: product.id, sizeId: product.sizeId, quantity: 1 },
+        token,
+      );
+      return true;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Please try again.';
+      Alert.alert(message.includes('already in cart') ? 'Already in cart' : 'Could not add item', message);
+      return message.includes('already in cart');
+    }
+  };
+
+  const handleProductAction = async (product: ChatProduct, action: 'add' | 'buy' | 'track' | 'review') => {
+    if (productActionBusy) return;
+
+    if (action === 'track' && product.placedOrderId) {
+      router.push({ pathname: '/(tabs)/orders', params: { orderId: product.placedOrderId } });
+      return;
+    }
+
+    if (action === 'review') {
+      router.push({ pathname: '/(tabs)/reviews', params: { productId: product.id } });
+      return;
+    }
+
+    setProductActionBusy(true);
+    try {
+      if (!product.isInCart) {
+        const added = await addProductToCart(product);
+        if (!added) return;
+      }
+      router.push('/(tabs)/cart');
+    } finally {
+      setProductActionBusy(false);
+    }
+  };
+
   if (loading) {
     return (
       <View style={styles.center}>
@@ -186,11 +331,11 @@ export default function MessagesScreen() {
   }
 
   return (
-    <KeyboardAvoidingView
-      style={styles.screen}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
-    >
+<KeyboardAvoidingView
+  style={styles.screen}
+  behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+  keyboardVerticalOffset={Platform.OS === 'ios' ? 80 : 0}
+>
       {activeConversation ? (
         <View style={styles.chatPanel}>
           <View style={styles.chatTopbar}>
@@ -205,9 +350,21 @@ export default function MessagesScreen() {
               <Ionicons name="arrow-back" size={23} color={Colors.text.primary} />
             </TouchableOpacity>
             <View style={styles.supportTitle}>
-              <Text style={styles.supportName}>A'FRO Official Support</Text>
-              <Text style={styles.supportStatus}>Online - typically replies instantly</Text>
+              <Text style={styles.supportName}>{activeIsAi ? 'AI Assistant' : "A'FRO Official Support"}</Text>
+              <Text style={styles.supportStatus}>{activeIsAi ? 'Online - ready to help' : 'Online - typically replies instantly'}</Text>
             </View>
+            <TouchableOpacity
+              style={styles.deleteButton}
+              activeOpacity={0.75}
+              disabled={deletingId === activeConversation.id}
+              onPress={() => confirmDeleteConversation(activeConversation.id)}
+            >
+              {deletingId === activeConversation.id ? (
+                <ActivityIndicator color={Colors.text.primary} size="small" />
+              ) : (
+                <Ionicons name="trash-outline" size={20} color={Colors.text.primary} />
+              )}
+            </TouchableOpacity>
           </View>
 
           {activeConversation.product ? (
@@ -231,14 +388,41 @@ export default function MessagesScreen() {
                   {activeConversation.product.orderId}
                 </Text>
               </View>
-              <TouchableOpacity style={styles.buyButton} activeOpacity={0.75}>
-                <Text style={styles.buyText}>Buy</Text>
-              </TouchableOpacity>
+              <View style={styles.productActions}>
+                {activeConversation.product.action === 'add' ? (
+                  <TouchableOpacity
+                    style={[styles.buyButton, productActionBusy && styles.buyButtonDisabled]}
+                    activeOpacity={0.75}
+                    disabled={productActionBusy}
+                    onPress={() => handleProductAction(activeConversation.product!, 'add')}
+                  >
+                    <Text style={styles.buyText}>Add</Text>
+                  </TouchableOpacity>
+                ) : null}
+                <TouchableOpacity
+                  style={[styles.buyButton, productActionBusy && styles.buyButtonDisabled]}
+                  activeOpacity={0.75}
+                  disabled={productActionBusy}
+                  onPress={() => handleProductAction(activeConversation.product!, activeConversation.product!.action === 'add' ? 'buy' : activeConversation.product!.action ?? 'buy')}
+                >
+                  <Text style={styles.buyText}>
+                    {activeConversation.product.action === 'track'
+                      ? 'Track'
+                      : activeConversation.product.action === 'review'
+                        ? 'Review'
+                        : 'Buy'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </View>
           ) : null}
 
-          <ScrollView ref={scrollRef} style={styles.messages} contentContainerStyle={styles.messagesContent}>
-            <Text style={styles.dateDivider}>Today</Text>
+<ScrollView
+  ref={scrollRef}
+  style={styles.messages}
+  contentContainerStyle={styles.messagesContent}
+  keyboardShouldPersistTaps="handled"
+>
             {activeConversation.messages.map((message) => {
               const fromCustomer = message.from === 'customer';
               return (
@@ -266,7 +450,7 @@ export default function MessagesScreen() {
               style={styles.input}
               value={draft}
               onChangeText={setDraft}
-              placeholder="Message A'FRO Support..."
+              placeholder={activeIsAi ? 'Message AI Assistant...' : "Message A'FRO Support..."}
               placeholderTextColor="#D5E8F8"
               multiline
             />
@@ -332,38 +516,77 @@ export default function MessagesScreen() {
 
           <View style={styles.listPanel}>
             <Text style={styles.listHeading}>SUPPORT</Text>
-            {filteredConversations.length ? (
-              filteredConversations.map((conversation, index) => (
+            {showAiContact ? (
+              <View style={[styles.conversationItem, styles.conversationItemFirst]}>
                 <TouchableOpacity
-                  key={conversation.id}
-                  style={[styles.conversationItem, index === 0 && styles.conversationItemFirst]}
-                  onPress={() => {
-                    openConversation(conversation.id);
-                  }}
+                  style={styles.conversationOpen}
+                  onPress={openAiAssistant}
                   activeOpacity={0.8}
+                  disabled={startingAi}
                 >
-                  <Avatar />
+                  <Avatar label="AI" />
                   <View style={styles.conversationText}>
                     <Text style={styles.conversationName} numberOfLines={1}>
-                      {conversation.name}
+                      AI Assistant
                     </Text>
                     <Text style={styles.conversationPreview} numberOfLines={1}>
-                      {conversation.lastMsg}
+                      Ask for outfit, sizing, or shopping help.
                     </Text>
                   </View>
                   <View style={styles.conversationMeta}>
-                    <Text style={styles.conversationTime}>{conversation.time}</Text>
-                    {conversation.unread ? <View style={styles.unreadDot} /> : null}
+                    {startingAi ? <ActivityIndicator color={Colors.text.primary} size="small" /> : <Text style={styles.conversationTime}>now</Text>}
                   </View>
                 </TouchableOpacity>
+              </View>
+            ) : null}
+            {filteredConversations.length ? (
+              filteredConversations.map((conversation, index) => (
+                <View
+                  key={conversation.id}
+                  style={[styles.conversationItem, index === 0 && !showAiContact && styles.conversationItemFirst]}
+                >
+                  <TouchableOpacity
+                    style={styles.conversationOpen}
+                    onPress={() => {
+                      openConversation(conversation.id);
+                    }}
+                    activeOpacity={0.8}
+                  >
+                    <Avatar label={isAiConversation(conversation) ? 'AI' : "A'F"} />
+                    <View style={styles.conversationText}>
+                      <Text style={styles.conversationName} numberOfLines={1}>
+                        {conversation.name}
+                      </Text>
+                      <Text style={styles.conversationPreview} numberOfLines={1}>
+                        {conversation.lastMsg}
+                      </Text>
+                    </View>
+                    <View style={styles.conversationMeta}>
+                      <Text style={styles.conversationTime}>{conversation.time}</Text>
+                      {conversation.unread ? <View style={styles.unreadDot} /> : null}
+                    </View>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.conversationDelete}
+                    activeOpacity={0.75}
+                    disabled={deletingId === conversation.id}
+                    onPress={() => confirmDeleteConversation(conversation.id)}
+                  >
+                    {deletingId === conversation.id ? (
+                      <ActivityIndicator color={Colors.text.primary} size="small" />
+                    ) : (
+                      <Ionicons name="trash-outline" size={18} color={Colors.text.secondary} />
+                    )}
+                  </TouchableOpacity>
+                </View>
               ))
-            ) : (
+            ) : !showAiContact ? (
               <View style={styles.empty}>
                 <Ionicons name="chatbubble-ellipses-outline" size={32} color={Colors.text.secondary} />
                 <Text style={styles.emptyTitle}>No conversations yet</Text>
                 <Text style={styles.emptyText}>Start an inquiry from a product overview.</Text>
               </View>
-            )}
+            ) : null}
           </View>
         </ScrollView>
       )}
@@ -371,10 +594,10 @@ export default function MessagesScreen() {
   );
 }
 
-function Avatar() {
+function Avatar({ label = "A'F" }: { label?: string }) {
   return (
     <View style={styles.avatar}>
-      <Text style={styles.avatarText}>A'F</Text>
+      <Text style={styles.avatarText}>{label}</Text>
       <View style={styles.onlineDot} />
     </View>
   );
@@ -477,8 +700,8 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(18, 29, 50, 0.86)',
     flexDirection: 'row',
     alignItems: 'center',
-    padding: Spacing.md,
-    gap: Spacing.sm,
+    paddingLeft: Spacing.md,
+    paddingRight: Spacing.sm,
   },
   conversationItemFirst: {
     borderTopWidth: 1,
@@ -487,6 +710,22 @@ const styles = StyleSheet.create({
   },
   conversationText: {
     flex: 1,
+  },
+  conversationOpen: {
+    flex: 1,
+    minHeight: 76,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    paddingVertical: Spacing.md,
+  },
+  conversationDelete: {
+    width: 38,
+    height: 38,
+    borderRadius: Radius.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: Spacing.xs,
   },
   conversationName: {
     color: Colors.text.primary,
@@ -583,6 +822,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: 'rgba(96, 165, 250, 0.12)',
   },
+  deleteButton: {
+    width: 42,
+    height: 38,
+    borderRadius: Radius.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(239, 68, 68, 0.18)',
+  },
   supportTitle: {
     flex: 1,
   },
@@ -642,6 +889,11 @@ const styles = StyleSheet.create({
     fontWeight: '400',
     marginTop: 2,
   },
+  productActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+  },
   buyButton: {
     minWidth: 58,
     height: 28,
@@ -649,6 +901,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#65768D',
+  },
+  buyButtonDisabled: {
+    opacity: 0.55,
   },
   buyText: {
     color: Colors.text.primary,
@@ -660,10 +915,11 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: Colors.border.subtle,
   },
-  messagesContent: {
-    paddingVertical: Spacing.lg,
-    gap: Spacing.md,
-  },
+ messagesContent: {
+  paddingTop: Spacing.lg,
+  paddingBottom: Spacing['2xl'],
+  gap: Spacing.md,
+},
   dateDivider: {
     alignSelf: 'center',
     color: '#D5E8F8',

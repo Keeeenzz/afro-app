@@ -26,9 +26,9 @@ function TabsContent() {
         <Tabs.Screen name="catalog" options={{ title: 'Catalog', headerShown: false, tabBarIcon: ({ color, size }) => <Ionicons name="grid-outline" size={size} color={color} /> }} />
         <Tabs.Screen name="messages" options={{ title: 'Messages', tabBarIcon: ({ color, size }) => <Ionicons name="chatbubble-outline" size={size} color={color} /> }} />
         <Tabs.Screen name="profile/index" options={{ title: 'Profile', headerTitle: 'Profile', tabBarButton: () => null }} />
-        <Tabs.Screen name="orders" options={{ title: 'Orders', tabBarButton: () => null }} />
-        <Tabs.Screen name="cart" options={{ title: 'Cart', tabBarButton: () => null }} />
-        <Tabs.Screen name="reviews" options={{ title: 'Reviews', tabBarButton: () => null }} />
+        <Tabs.Screen name="orders" options={{ title: 'Orders', headerShown: false, tabBarButton: () => null }} />
+        <Tabs.Screen name="cart" options={{ title: 'Cart', headerShown: false, tabBarButton: () => null }} />
+        <Tabs.Screen name="reviews" options={{ title: 'Reviews', headerShown: false, tabBarButton: () => null }} />
         <Tabs.Screen name="settings" options={{ title: 'Settings', tabBarButton: () => null }} />
         <Tabs.Screen name="product/[id]" options={{ title: 'Product', headerShown: false, tabBarButton: () => null }} />
         <Tabs.Screen name="skin-tone" options={{ title: 'Skin Tone AI', headerShown: false, tabBarButton: () => null }} />

@@ -43,6 +43,41 @@ export function apiPatch<T>(path: string, body: unknown, token?: string | null) 
   return apiRequest<T>(path, { method: 'PATCH', body, token });
 }
 
+export function apiDelete<T>(path: string, body?: unknown, token?: string | null) {
+  return apiRequest<T>(path, { method: 'DELETE', body, token });
+}
+
+export async function apiPostForm<T>(path: string, form: FormData, token?: string | null): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const request = new XMLHttpRequest();
+
+    request.open('POST', `${API_BASE_URL}${path}`);
+    if (token) {
+      request.setRequestHeader('Authorization', `Bearer ${token}`);
+    }
+
+    request.onload = () => {
+      let data: { message?: string } | T | null = null;
+
+      try {
+        data = request.responseText ? JSON.parse(request.responseText) : null;
+      } catch {
+        reject(new Error(`API request returned non-JSON response: ${request.responseText.slice(0, 120)}`));
+        return;
+      }
+
+      if (request.status < 200 || request.status >= 300) {
+        reject(new Error((data as { message?: string } | null)?.message ?? `API request failed: ${request.status}`));
+        return;
+      }
+
+      resolve(data as T);
+    };
+    request.onerror = () => reject(new Error('Could not reach the API. Make sure the backend is running and your phone is on the same Wi-Fi.'));
+    request.send(form);
+  });
+}
+
 export function imageUrl(url?: string | null) {
   if (!url) {
     return null;
