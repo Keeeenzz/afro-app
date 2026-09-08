@@ -8,19 +8,17 @@ import { resolvedProductImageUri } from '@/lib/tryOn';
 export function TryOnDock() {
   const router = useRouter();
   const pathname = usePathname();
-  const { status, progress, displayResultUri, selectedProducts, error } = useTryOnJobStore();
+  const { status, progress, displayResultUri, selectedProducts } = useTryOnJobStore();
 
-  if (status === 'idle' || pathname.includes('/try-on')) {
+  // The dock is only a progress shortcut. Once a result is ready, it must not
+  // sit above product controls or keep a completed job visible.
+  if (status !== 'generating' || pathname.includes('/try-on')) {
     return null;
   }
 
   const previewUri = displayResultUri || resolvedProductImageUri(selectedProducts[0]?.imageUrl as string | null | undefined);
-  const title = status === 'result' ? 'Try-on ready' : status === 'error' ? 'Try-on failed' : 'Generating';
-  const subtitle = status === 'error'
-    ? error || 'Tap to check'
-    : status === 'result'
-      ? 'Tap to view result'
-      : `${progress}% complete`;
+  const title = 'Fitting your look';
+  const subtitle = `${progress}% complete`;
 
   return (
     <TouchableOpacity
@@ -38,18 +36,12 @@ export function TryOnDock() {
       <View style={styles.copy}>
         <Text style={styles.title} numberOfLines={1}>{title}</Text>
         <Text style={styles.subtitle} numberOfLines={1}>{subtitle}</Text>
-        {status === 'generating' ? (
-          <View style={styles.track}>
-            <View style={[styles.fill, { width: `${Math.min(100, Math.max(3, progress))}%` }]} />
-          </View>
-        ) : null}
+        <View style={styles.track}>
+          <View style={[styles.fill, { width: `${Math.min(100, Math.max(3, progress))}%` }]} />
+        </View>
       </View>
-      <View style={[styles.iconBadge, status === 'result' && styles.iconBadgeReady, status === 'error' && styles.iconBadgeError]}>
-        <Ionicons
-          name={status === 'result' ? 'checkmark' : status === 'error' ? 'alert' : 'sparkles-outline'}
-          size={16}
-          color={Colors.white}
-        />
+      <View style={styles.iconBadge}>
+        <Ionicons name="sparkles-outline" size={16} color={Colors.white} />
       </View>
     </TouchableOpacity>
   );
@@ -58,8 +50,8 @@ export function TryOnDock() {
 const styles = StyleSheet.create({
   dock: {
     alignItems: 'center',
-    backgroundColor: 'rgba(17, 24, 39, 0.96)',
-    borderColor: 'rgba(154, 233, 245, 0.35)',
+    backgroundColor: Colors.bg.card,
+    borderColor: Colors.border.default,
     borderRadius: Radius.full,
     borderWidth: 1,
     bottom: 22,
@@ -74,8 +66,8 @@ const styles = StyleSheet.create({
     right: Spacing.md,
     shadowColor: Colors.black,
     shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.35,
-    shadowRadius: 18,
+    shadowOpacity: 0.14,
+    shadowRadius: 12,
     zIndex: 50,
   },
   preview: {
@@ -107,29 +99,23 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   track: {
-    backgroundColor: 'rgba(255,255,255,0.16)',
+    backgroundColor: '#D9E6F5',
     borderRadius: Radius.full,
     height: 5,
     marginTop: 6,
     overflow: 'hidden',
   },
   fill: {
-    backgroundColor: '#22D3EE',
+    backgroundColor: Colors.brand.blue,
     borderRadius: Radius.full,
     height: '100%',
   },
   iconBadge: {
     alignItems: 'center',
-    backgroundColor: '#0B809A',
+    backgroundColor: Colors.brand.blue,
     borderRadius: Radius.full,
     height: 34,
     justifyContent: 'center',
     width: 34,
-  },
-  iconBadgeReady: {
-    backgroundColor: Colors.status.success,
-  },
-  iconBadgeError: {
-    backgroundColor: Colors.status.error,
   },
 });

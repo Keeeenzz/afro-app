@@ -260,22 +260,24 @@ export default function MixMatchScreen() {
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.header}>
-        <TouchableOpacity style={styles.headerIcon} onPress={() => router.back()} activeOpacity={0.75}>
-          <Ionicons name="chevron-back" size={26} color={Colors.text.primary} />
-        </TouchableOpacity>
         <View style={styles.brandLockup}>
-          <View style={styles.logoMark}>
-            <Image source={require('../../assets/afro-logo.png')} style={styles.headerLogoImage} resizeMode="contain" />
-          </View>
+          <Image source={require('../../assets/afro-logo-black.png')} style={styles.headerLogoImage} resizeMode="contain" />
           <Text style={styles.brand}>A'FRO</Text>
         </View>
         <TouchableOpacity style={styles.headerIcon} onPress={openNav} activeOpacity={0.75}>
-          <Ionicons name="menu-outline" size={30} color={Colors.brand.blueLight} />
+          <Ionicons name="menu-outline" size={28} color={Colors.brand.blue} />
         </TouchableOpacity>
       </View>
 
+      <View style={styles.titleRow}>
+        <TouchableOpacity style={styles.headerIcon} onPress={() => router.back()} activeOpacity={0.75}>
+          <Ionicons name="arrow-back" size={25} color={Colors.text.primary} />
+        </TouchableOpacity>
+        <Text style={styles.pageTitle}>Mix & Match</Text>
+        <View style={styles.headerIcon} />
+      </View>
+
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
-        <Text style={styles.title}>Mix & Match</Text>
         <Text style={styles.subtitle}>
           Build a layered look from live admin products, then send it to Try On.
         </Text>
@@ -620,13 +622,11 @@ const styles = StyleSheet.create({
   },
   header: {
     alignItems: 'center',
-    borderBottomColor: Colors.border.subtle,
-    borderBottomWidth: 1,
     flexDirection: 'row',
-    height: 76,
+    height: 64,
     justifyContent: 'space-between',
     paddingHorizontal: Spacing.md,
-    paddingTop: Spacing.md,
+    paddingTop: Spacing.sm,
   },
   headerIcon: {
     alignItems: 'center',
@@ -639,18 +639,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: Spacing.sm,
   },
-  logoMark: {
-    alignItems: 'center',
-    backgroundColor: '#E8F4FF',
-    borderRadius: 14,
-    height: 28,
-    justifyContent: 'center',
-    overflow: 'hidden',
-    width: 28,
-  },
   headerLogoImage: {
-    height: 27,
-    width: 27,
+    height: 30,
+    width: 30,
   },
   brand: {
     color: Colors.text.primary,
@@ -661,11 +652,8 @@ const styles = StyleSheet.create({
     padding: Spacing.md,
     paddingBottom: Spacing['2xl'],
   },
-  title: {
-    color: Colors.text.primary,
-    fontSize: FontSize.xl,
-    fontWeight: '900',
-  },
+  titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: Spacing.md, marginBottom: Spacing.sm },
+  pageTitle: { color: Colors.text.primary, fontSize: FontSize.lg, fontWeight: '900' },
   subtitle: {
     color: Colors.text.secondary,
     fontSize: FontSize.sm,
@@ -697,8 +685,8 @@ const styles = StyleSheet.create({
   },
   modeButton: {
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    borderColor: 'rgba(206, 232, 255, 0.18)',
+    backgroundColor: Colors.bg.card,
+    borderColor: Colors.border.default,
     borderRadius: Radius.full,
     borderWidth: 1,
     flexBasis: '48%',
@@ -708,8 +696,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.sm,
   },
   modeButtonActive: {
-    backgroundColor: '#0B809A',
-    borderColor: '#9AE9F5',
+    backgroundColor: Colors.brand.blue,
+    borderColor: Colors.brand.blue,
   },
   modeButtonText: {
     color: Colors.text.secondary,
@@ -721,8 +709,8 @@ const styles = StyleSheet.create({
     color: Colors.white,
   },
   measurementBox: {
-    backgroundColor: 'rgba(8, 14, 27, 0.78)',
-    borderColor: Colors.border.subtle,
+    backgroundColor: Colors.bg.card,
+    borderColor: Colors.border.default,
     borderRadius: Radius.md,
     borderWidth: 1,
     marginBottom: Spacing.md,
@@ -735,7 +723,7 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.sm,
   },
   measurementHint: {
-    color: '#9AE9F5',
+    color: Colors.brand.blue,
     fontSize: 10,
     fontWeight: '900',
     textTransform: 'uppercase',
@@ -756,8 +744,8 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   measureInput: {
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    borderColor: 'rgba(206, 232, 255, 0.28)',
+    backgroundColor: Colors.bg.input,
+    borderColor: Colors.border.default,
     borderRadius: Radius.sm,
     borderWidth: 1,
     color: Colors.text.primary,
@@ -774,7 +762,7 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   stage: {
-    backgroundColor: 'rgba(26, 34, 53, 0.92)',
+    backgroundColor: Colors.bg.card,
     borderColor: Colors.border.default,
     borderRadius: Radius.lg,
     borderWidth: 1,
@@ -788,14 +776,14 @@ const styles = StyleSheet.create({
   },
   separator: {
     alignSelf: 'center',
-    backgroundColor: 'rgba(206, 232, 255, 0.16)',
+    backgroundColor: Colors.border.default,
     height: 1,
     width: '72%',
   },
   arrowButton: {
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.14)',
-    borderColor: 'rgba(206, 232, 255, 0.2)',
+    backgroundColor: '#FFFFFF',
+    borderColor: Colors.border.default,
     borderRadius: Radius.full,
     borderWidth: 1,
     height: 42,
@@ -811,7 +799,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.sm,
   },
   slotLabel: {
-    color: '#9AE9F5',
+    color: Colors.brand.blue,
     fontSize: FontSize.xs,
     fontWeight: '900',
     marginBottom: Spacing.sm,
@@ -871,8 +859,8 @@ const styles = StyleSheet.create({
   },
   selectedRow: {
     alignItems: 'center',
-    backgroundColor: 'rgba(96, 132, 166, 0.55)',
-    borderColor: 'rgba(206, 232, 255, 0.2)',
+    backgroundColor: Colors.bg.card,
+    borderColor: Colors.border.default,
     borderRadius: Radius.md,
     borderWidth: 1,
     flexDirection: 'row',
@@ -897,7 +885,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   selectedLabel: {
-    color: '#9AE9F5',
+    color: Colors.brand.blue,
     fontSize: 10,
     fontWeight: '900',
     textTransform: 'uppercase',
@@ -910,14 +898,14 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   selectedMeta: {
-    color: '#D6E7F6',
+    color: Colors.text.secondary,
     fontSize: FontSize.xs,
     marginTop: 2,
   },
   tryOnButton: {
     alignItems: 'center',
     alignSelf: 'center',
-    backgroundColor: '#0B809A',
+    backgroundColor: Colors.brand.blue,
     borderRadius: Radius.full,
     flexDirection: 'row',
     gap: Spacing.sm,

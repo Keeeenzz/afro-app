@@ -19,6 +19,7 @@ import { apiDelete, apiGet, apiPost, imageUrl } from '@/lib/api';
 import { containsProfanity, PROFANITY_ERROR } from '@/lib/profanity';
 import { Colors, FontSize, Radius, Spacing } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/useAuthStore';
+import { useNav } from '@/context/NavContext';
 
 type ChatMessage = {
   id: string;
@@ -64,6 +65,7 @@ function isAiConversation(conversation: Conversation | null) {
 export default function MessagesScreen() {
   const router = useRouter();
   const navigation = useNavigation();
+  const { openNav } = useNav();
   const { conversationId } = useLocalSearchParams<{ conversationId?: string }>();
   const { user, token } = useAuthStore();
   const scrollRef = useRef<ScrollView>(null);
@@ -80,6 +82,7 @@ export default function MessagesScreen() {
   const [query, setQuery] = useState('');
   const [filterMode, setFilterMode] = useState<FilterMode>('Newest');
   const [filterOpen, setFilterOpen] = useState(false);
+  const [faqOpen, setFaqOpen] = useState(false);
   const [error, setError] = useState('');
 
   const loadConversations = useCallback(async () => {
@@ -219,8 +222,8 @@ if (isAiConversation(selectedConversation ?? null)) {
     setError('');
     try {
       const conversation = await apiPost<Conversation>(
-        '/chat/conversations',
-        { userId: user.user_id, productId: 'gemini-bot' },
+        '/chat/conversations/ai',
+        { userId: user.user_id },
         token,
       );
       setConversations((current) => {
@@ -429,7 +432,7 @@ if (isAiConversation(selectedConversation ?? null)) {
                 <View key={message.id} style={[styles.messageRow, fromCustomer && styles.messageRowCustomer]}>
                   {!fromCustomer ? <Avatar /> : null}
                   <View style={[styles.messageBubble, fromCustomer ? styles.customerBubble : styles.adminBubble]}>
-                    <Text style={styles.messageText}>{message.text}</Text>
+                    <Text style={[styles.messageText, fromCustomer && styles.customerMessageText]}>{message.text}</Text>
                     <Text style={[styles.messageTime, fromCustomer && styles.customerTime]}>
                       {message.time}
                       {fromCustomer ? `  ${message.isRead ? `Read at ${message.readAt || message.time}` : 'Delivered'}` : ''}
@@ -473,6 +476,24 @@ if (isAiConversation(selectedConversation ?? null)) {
           contentContainerStyle={styles.inboxContent}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={Colors.brand.blueLight} />}
         >
+          <View style={styles.pageHeader}>
+            <View style={styles.brandRow}>
+              <View style={styles.brandLockup}>
+                <Image source={require('@/assets/afro-logo-black.png')} style={styles.brandLogo} resizeMode="contain" />
+                <Text style={styles.brandText}>A'FRO</Text>
+              </View>
+              <TouchableOpacity style={styles.menuButton} onPress={openNav}>
+                <Ionicons name="menu-outline" size={28} color={Colors.brand.blue} />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.titleRow}>
+              <TouchableOpacity style={styles.backPageButton} onPress={() => router.back()}>
+                <Ionicons name="arrow-back" size={25} color={Colors.text.primary} />
+              </TouchableOpacity>
+              <Text style={styles.pageTitle}>Messages</Text>
+              <View style={styles.backPageButton} />
+            </View>
+          </View>
           <View style={styles.searchWrap}>
             <View style={styles.searchRow}>
               <Ionicons name="search" size={17} color={Colors.text.secondary} />
@@ -481,7 +502,7 @@ if (isAiConversation(selectedConversation ?? null)) {
                 value={query}
                 onChangeText={setQuery}
                 placeholder="Search conversations"
-                placeholderTextColor="#D5E8F8"
+                placeholderTextColor="#3e6c93"
               />
               <TouchableOpacity
                 style={[styles.filterButton, filterOpen && styles.filterButtonActive]}
@@ -514,13 +535,30 @@ if (isAiConversation(selectedConversation ?? null)) {
             ) : null}
           </View>
 
+          <View style={styles.quickActions}>
+            <TouchableOpacity style={styles.quickAction} onPress={() => setFaqOpen((open) => !open)} activeOpacity={0.8}>
+              <Ionicons name="help-circle-outline" size={20} color={Colors.brand.blue} />
+              <Text style={styles.quickActionText}>FAQ</Text>
+            </TouchableOpacity>
+          </View>
+
+          {faqOpen ? (
+            <View style={styles.faqCard}>
+              <Text style={styles.faqTitle}>Quick answers</Text>
+              <Text style={styles.faqItem}>Shipping: delivery estimates appear in each order’s tracking view.</Text>
+              <Text style={styles.faqItem}>Payment: GCash payment details and receipt upload appear at checkout.</Text>
+              <Text style={styles.faqItem}>Sizing: choose an available size from the product page before adding it to your cart.</Text>
+              <Text style={styles.faqHint}>Need more help? Send the AI Assistant a message.</Text>
+            </View>
+          ) : null}
+
           <View style={styles.listPanel}>
             <Text style={styles.listHeading}>SUPPORT</Text>
             {showAiContact ? (
               <View style={[styles.conversationItem, styles.conversationItemFirst]}>
                 <TouchableOpacity
                   style={styles.conversationOpen}
-                  onPress={openAiAssistant}
+                  onPress={() => openAiAssistant()}
                   activeOpacity={0.8}
                   disabled={startingAi}
                 >
@@ -619,6 +657,15 @@ const styles = StyleSheet.create({
     paddingTop: Spacing.md,
     paddingBottom: Spacing['2xl'],
   },
+  pageHeader: { marginBottom: Spacing.md },
+  brandRow: { height: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  brandLockup: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  brandLogo: { width: 28, height: 28 },
+  brandText: { color: Colors.text.primary, fontSize: FontSize.lg, fontWeight: '900' },
+  menuButton: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center' },
+  titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: Spacing.sm },
+  backPageButton: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  pageTitle: { color: Colors.text.primary, fontSize: FontSize.lg, fontWeight: '900' },
   searchWrap: {
     position: 'relative',
     zIndex: 2,
@@ -628,8 +675,8 @@ const styles = StyleSheet.create({
     height: 40,
     borderRadius: Radius.md,
     borderWidth: 1,
-    borderColor: '#5C718A',
-    backgroundColor: 'rgba(9, 17, 31, 0.92)',
+    borderColor: Colors.border.default,
+    backgroundColor: Colors.bg.input,
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: Spacing.md,
@@ -659,8 +706,8 @@ const styles = StyleSheet.create({
     width: 132,
     borderRadius: Radius.md,
     borderWidth: 1,
-    borderColor: '#5C718A',
-    backgroundColor: '#111827',
+    borderColor: Colors.border.default,
+    backgroundColor: Colors.bg.card,
     paddingVertical: Spacing.xs,
     zIndex: 4,
   },
@@ -681,13 +728,13 @@ const styles = StyleSheet.create({
   },
   listPanel: {
     borderRadius: Radius.xl,
-    backgroundColor: 'rgba(89, 110, 132, 0.48)',
+    backgroundColor: Colors.bg.card,
     borderWidth: 1,
-    borderColor: 'rgba(221, 241, 255, 0.18)',
+    borderColor: Colors.border.default,
     padding: Spacing.lg,
   },
   listHeading: {
-    color: '#EAF6FF',
+    color: Colors.text.secondary,
     fontSize: FontSize.xs,
     fontWeight: '600',
     marginBottom: Spacing.sm,
@@ -695,9 +742,9 @@ const styles = StyleSheet.create({
   conversationItem: {
     minHeight: 78,
     borderWidth: 1,
-    borderColor: '#5C718A',
+    borderColor: Colors.border.default,
     borderTopWidth: 0,
-    backgroundColor: 'rgba(18, 29, 50, 0.86)',
+    backgroundColor: '#FFFFFF',
     flexDirection: 'row',
     alignItems: 'center',
     paddingLeft: Spacing.md,
@@ -733,7 +780,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   conversationPreview: {
-    color: '#DCEBFA',
+    color: Colors.text.secondary,
     fontSize: FontSize.xs,
     fontWeight: '400',
     marginTop: 3,
@@ -759,7 +806,7 @@ const styles = StyleSheet.create({
     borderRadius: 15,
     backgroundColor: '#AEE4FF',
     borderWidth: 2,
-    borderColor: '#E8F4FF',
+    borderColor: Colors.border.default,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -777,7 +824,7 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     backgroundColor: Colors.status.success,
     borderWidth: 2,
-    borderColor: '#26384D',
+    borderColor: Colors.bg.card,
   },
   empty: {
     minHeight: 190,
@@ -800,14 +847,15 @@ const styles = StyleSheet.create({
   chatPanel: {
     flex: 1,
     paddingHorizontal: Spacing.md,
+    paddingTop: 60,
     paddingBottom: Spacing.sm,
   },
   chatTopbar: {
     minHeight: 54,
     borderRadius: Radius.md,
     borderWidth: 1,
-    borderColor: '#6E86A4',
-    backgroundColor: 'rgba(18, 29, 50, 0.9)',
+    borderColor: Colors.border.default,
+    backgroundColor: Colors.bg.card,
     flexDirection: 'row',
     alignItems: 'center',
     padding: Spacing.sm,
@@ -820,7 +868,7 @@ const styles = StyleSheet.create({
     borderRadius: Radius.sm,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(96, 165, 250, 0.12)',
+    backgroundColor: '#EAF4FF',
   },
   deleteButton: {
     width: 42,
@@ -848,8 +896,8 @@ const styles = StyleSheet.create({
     minHeight: 74,
     borderRadius: Radius.lg,
     borderWidth: 1,
-    borderColor: '#6E86A4',
-    backgroundColor: 'rgba(18, 29, 50, 0.82)',
+    borderColor: Colors.border.default,
+    backgroundColor: Colors.bg.card,
     flexDirection: 'row',
     alignItems: 'center',
     padding: Spacing.sm,
@@ -878,7 +926,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   productPrice: {
-    color: '#AEE4FF',
+    color: Colors.brand.blue,
     fontSize: FontSize.xs,
     fontWeight: '600',
     marginTop: 2,
@@ -900,7 +948,7 @@ const styles = StyleSheet.create({
     borderRadius: Radius.sm,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#65768D',
+    backgroundColor: '#EAF4FF',
   },
   buyButtonDisabled: {
     opacity: 0.55,
@@ -922,7 +970,7 @@ const styles = StyleSheet.create({
 },
   dateDivider: {
     alignSelf: 'center',
-    color: '#D5E8F8',
+    color: Colors.text.secondary,
     fontSize: FontSize.xs,
     fontWeight: '500',
     marginBottom: Spacing.sm,
@@ -944,27 +992,34 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
   },
-  adminBubble: {
-    backgroundColor: '#718496',
-  },
+  adminBubble: { backgroundColor: '#EAF4FF' },
   customerBubble: {
-    backgroundColor: '#276296',
+    backgroundColor: Colors.brand.blue,
   },
   messageText: {
-    color: Colors.text.primary,
+    color: '#082D5C',
     fontSize: FontSize.xs,
     fontWeight: '400',
     lineHeight: 17,
   },
   messageTime: {
-    color: '#E5F3FF',
+    color: Colors.text.secondary,
     fontSize: 9,
     fontWeight: '400',
     marginTop: Spacing.xs,
   },
+  customerMessageText: { color: Colors.white },
   customerTime: {
     textAlign: 'right',
+    color: '#EAF4FF',
   },
+  quickActions: { flexDirection: 'row', marginBottom: Spacing.lg },
+  quickAction: { alignItems: 'center', gap: 6, minWidth: 72 },
+  quickActionText: { color: Colors.text.secondary, fontSize: FontSize.xs, fontWeight: '700' },
+  faqCard: { backgroundColor: '#FFFFFF', borderColor: Colors.border.default, borderWidth: 1, borderRadius: Radius.md, padding: Spacing.md, marginBottom: Spacing.lg },
+  faqTitle: { color: Colors.text.primary, fontSize: FontSize.base, fontWeight: '900', marginBottom: Spacing.sm },
+  faqItem: { color: Colors.text.secondary, fontSize: FontSize.xs, lineHeight: 18, marginBottom: Spacing.xs },
+  faqHint: { color: Colors.brand.blue, fontSize: FontSize.xs, fontWeight: '700', marginTop: Spacing.xs },
   error: {
     color: Colors.status.error,
     fontSize: FontSize.xs,
@@ -985,7 +1040,7 @@ const styles = StyleSheet.create({
     height: 38,
     borderRadius: Radius.sm,
     borderWidth: 1,
-    borderColor: '#8FA9C8',
+    borderColor: Colors.border.default,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -994,7 +1049,7 @@ const styles = StyleSheet.create({
     minHeight: 38,
     maxHeight: 90,
     borderRadius: Radius.sm,
-    backgroundColor: '#65768D',
+    backgroundColor: Colors.bg.input,
     color: Colors.text.primary,
     paddingHorizontal: Spacing.md,
     paddingVertical: Platform.OS === 'ios' ? 10 : 6,
@@ -1005,7 +1060,7 @@ const styles = StyleSheet.create({
     width: 42,
     height: 38,
     borderRadius: Radius.sm,
-    backgroundColor: '#276296',
+    backgroundColor: Colors.brand.blue,
     alignItems: 'center',
     justifyContent: 'center',
   },

@@ -486,7 +486,7 @@ export default function CatalogScreen() {
             <View style={styles.brandRow}>
               <View style={styles.brandLockup}>
                 <View style={styles.logoMark}>
-                  <Image source={require('../../assets/afro-logo.png')} style={styles.headerLogoImage} resizeMode="contain" />
+                  <Image source={require('../../assets/afro-logo-black.png')} style={styles.headerLogoImage} resizeMode="contain" />
                 </View>
                 <Text style={styles.brand}>A'FRO</Text>
               </View>
@@ -496,7 +496,7 @@ export default function CatalogScreen() {
                 activeOpacity={0.75}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               >
-                <Ionicons name="menu-outline" size={30} color={Colors.brand.blueLight} />
+                <Ionicons name="menu-outline" size={28} color={Colors.brand.blue} />
               </TouchableOpacity>
             </View>
 
@@ -523,7 +523,7 @@ export default function CatalogScreen() {
                 onPress={() => setFiltersOpen(true)}
                 activeOpacity={0.75}
               >
-                <Ionicons name="options" size={21} color={Colors.text.primary} />
+                <Ionicons name="options" size={21} color= "#d2dcf5" />
                 {activeFilterCount > 0 ? <Text style={styles.filterBadge}>{activeFilterCount}</Text> : null}
               </TouchableOpacity>
             </View>
@@ -977,7 +977,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: Spacing.lg,
+    marginBottom: Spacing.md,
   },
   brandLockup: {
     flexDirection: 'row',
@@ -1003,8 +1003,8 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   menuButton: {
-    width: 48,
-    height: 48,
+    width: 42,
+    height: 42,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1021,7 +1021,7 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: '#0B809A',
+    backgroundColor: '#0E4F8D',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1031,9 +1031,9 @@ const styles = StyleSheet.create({
   pageNumberGroup: {
     minHeight: 48,
     borderRadius: Radius.full,
-    backgroundColor: 'rgba(148, 180, 190, 0.56)',
+    backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: 'rgba(232, 244, 255, 0.28)',
+    borderColor: '#C9DCF2',
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.xs,
@@ -1047,24 +1047,24 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   pageNumberActive: {
-    backgroundColor: 'rgba(232, 244, 255, 0.24)',
+    backgroundColor: '#EAF4FF',
   },
   pageNumberText: {
-    color: Colors.white,
+    color: Colors.text.primary,
     fontSize: FontSize.base,
     fontWeight: '900',
   },
   pageNumberTextActive: {
-    color: Colors.white,
+    color: Colors.text.primary,
   },
   pageDots: {
-    color: Colors.white,
+    color: Colors.text.primary,
     fontSize: FontSize.base,
     fontWeight: '900',
     paddingHorizontal: Spacing.xs,
   },
   goLabel: {
-    color: Colors.white,
+    color: Colors.text.primary,
     fontSize: FontSize.base,
     fontWeight: '900',
   },
@@ -1072,10 +1072,10 @@ const styles = StyleSheet.create({
     width: 58,
     height: 48,
     borderRadius: Radius.full,
-    backgroundColor: 'rgba(148, 180, 190, 0.56)',
+    backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: 'rgba(232, 244, 255, 0.28)',
-    color: Colors.white,
+    borderColor: '#C9DCF2',
+    color: Colors.text.primary,
     fontSize: FontSize.lg,
     fontWeight: '900',
     textAlign: 'center',
@@ -1084,7 +1084,7 @@ const styles = StyleSheet.create({
   goButton: {
     height: 48,
     borderRadius: Radius.full,
-    backgroundColor: '#0B809A',
+    backgroundColor: '#0E4F8D',
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: Spacing.md,
@@ -1103,10 +1103,10 @@ const styles = StyleSheet.create({
   searchBox: {
     flex: 1,
     height: 44,
-    borderRadius: Radius.full,
+    borderRadius: Radius.md,
     borderWidth: 1,
-    borderColor: 'rgba(178, 220, 255, 0.28)',
-    backgroundColor: 'rgba(8, 14, 27, 0.82)',
+    borderColor: '#A9CAF0',
+    backgroundColor: '#FFFFFF',
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: Spacing.md,
@@ -1129,15 +1129,15 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: Radius.full,
-    backgroundColor: 'rgba(33, 47, 70, 0.94)',
+    backgroundColor: '#0E4F8D',
     borderWidth: 1,
-    borderColor: 'rgba(178, 220, 255, 0.18)',
+    borderColor: '#0E4F8D',
     alignItems: 'center',
     justifyContent: 'center',
   },
   filterButtonActive: {
-    backgroundColor: '#126D84',
-    borderColor: '#3CB8D1',
+    backgroundColor: '#073A70',
+    borderColor: '#073A70',
   },
   filterBadge: {
     position: 'absolute',
@@ -1146,7 +1146,7 @@ const styles = StyleSheet.create({
     minWidth: 16,
     height: 16,
     borderRadius: 8,
-    backgroundColor: '#C8EDFF',
+    backgroundColor: '#F59E0B',
     color: Colors.bg.primary,
     textAlign: 'center',
     fontSize: 10,
@@ -1155,8 +1155,8 @@ const styles = StyleSheet.create({
   },
   toneCard: {
     alignItems: 'center',
-    backgroundColor: 'rgba(14, 82, 101, 0.76)',
-    borderColor: 'rgba(96, 165, 250, 0.28)',
+    backgroundColor: '#0E4F8D',
+    borderColor: '#0E4F8D',
     borderRadius: Radius.md,
     borderWidth: 1,
     flexDirection: 'row',
@@ -1167,7 +1167,7 @@ const styles = StyleSheet.create({
   },
   toneIcon: {
     alignItems: 'center',
-    backgroundColor: '#0B809A',
+    backgroundColor: '#1A67AB',
     borderRadius: 16,
     height: 32,
     justifyContent: 'center',
@@ -1177,12 +1177,12 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   toneTitle: {
-    color: Colors.text.primary,
+    color: "#EAF4FF",
     fontSize: FontSize.sm,
     fontWeight: '900',
   },
   toneText: {
-    color: '#D6E7F6',
+    color: '#EAF4FF',
     fontSize: FontSize.xs,
     fontWeight: '700',
     marginTop: 2,
@@ -1195,8 +1195,8 @@ const styles = StyleSheet.create({
   },
   mixCard: {
     alignItems: 'center',
-    backgroundColor: 'rgba(25, 66, 88, 0.82)',
-    borderColor: 'rgba(154, 233, 245, 0.28)',
+    backgroundColor: '#DCEBFA',
+    borderColor: '#C9DCF2',
     borderRadius: Radius.md,
     borderWidth: 1,
     flexDirection: 'row',
@@ -1207,7 +1207,7 @@ const styles = StyleSheet.create({
   },
   mixIcon: {
     alignItems: 'center',
-    backgroundColor: '#126D84',
+    backgroundColor: '#0E4F8D',
     borderRadius: 16,
     height: 32,
     justifyContent: 'center',
@@ -1222,7 +1222,7 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   mixText: {
-    color: '#D6E7F6',
+    color: Colors.text.secondary,
     fontSize: FontSize.xs,
     fontWeight: '700',
     marginTop: 2,
@@ -1243,8 +1243,8 @@ const styles = StyleSheet.create({
     borderColor: Colors.border.default,
   },
   tabActive: {
-    backgroundColor: '#0B809A',
-    borderColor: '#30B9D3',
+    backgroundColor: '#0E4F8D',
+    borderColor: '#0E4F8D',
   },
   tabText: {
     color: Colors.text.primary,
@@ -1271,10 +1271,10 @@ const styles = StyleSheet.create({
   },
   card: {
     flex: 1,
-    backgroundColor: 'rgba(79, 101, 130, 0.72)',
+    backgroundColor: '#FFFFFF',
     borderRadius: Radius.md,
     borderWidth: 1,
-    borderColor: 'rgba(206, 232, 255, 0.14)',
+    borderColor: '#E1EAF5',
     padding: 9,
     marginBottom: Spacing.md,
     maxWidth: '50%',
@@ -1282,13 +1282,12 @@ const styles = StyleSheet.create({
   imageFrame: {
     aspectRatio: 1,
     borderRadius: Radius.sm,
-    backgroundColor: '#A8DDFF',
+    backgroundColor: '#EDF4FD',
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
     marginBottom: Spacing.sm,
-    borderWidth: 2,
-    borderColor: '#E8F4FF',
+    borderWidth: 0,
   },
   image: {
     width: '100%',
@@ -1301,12 +1300,12 @@ const styles = StyleSheet.create({
     width: 26,
     height: 26,
     borderRadius: 13,
-    backgroundColor: 'rgba(232, 244, 255, 0.72)',
+    backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
   },
   heartButtonSaved: {
-    backgroundColor: '#E8F4FF',
+    backgroundColor: '#EAF4FF',
   },
   nameRow: {
     flexDirection: 'row',
@@ -1323,18 +1322,18 @@ const styles = StyleSheet.create({
     minWidth: 22,
     height: 16,
     borderRadius: 8,
-    backgroundColor: 'rgba(215, 233, 246, 0.25)',
+    backgroundColor: '#0E4F8D',
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 5,
   },
   sizePillText: {
-    color: '#D8EDFF',
+    color: Colors.white,
     fontSize: 8,
     fontWeight: '900',
   },
   meta: {
-    color: '#D6E7F6',
+    color: Colors.text.secondary,
     fontSize: 10,
     marginTop: 2,
     minHeight: 14,
@@ -1347,24 +1346,24 @@ const styles = StyleSheet.create({
     gap: Spacing.xs,
   },
   price: {
-    color: '#C8E7FF',
+    color: Colors.text.primary,
     fontSize: FontSize.md,
     fontWeight: '900',
   },
   stock: {
-    color: '#BDEAD5',
+    color: '#15803D',
     fontSize: 9,
     fontWeight: '800',
     marginTop: 1,
   },
   stockOut: {
-    color: '#FFC4C4',
+    color: '#B42318',
   },
   tryOnButton: {
-    height: 21,
-    minWidth: 54,
-    borderRadius: 7,
-    backgroundColor: 'rgba(210, 224, 238, 0.36)',
+    height: 32,
+    minWidth: 62,
+    borderRadius: 10,
+    backgroundColor: '#0E4F8D',
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 8,
@@ -1374,7 +1373,7 @@ const styles = StyleSheet.create({
   },
   tryOnText: {
     color: Colors.white,
-    fontSize: 8,
+    fontSize: 10,
     fontWeight: '900',
   },
   empty: {

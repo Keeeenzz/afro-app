@@ -1,10 +1,13 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   StyleSheet,
   SafeAreaView,
   ScrollView,
   KeyboardAvoidingView,
   Platform,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Button } from '@/components/ui/Button';
@@ -13,6 +16,9 @@ import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { StepIndicator } from '@/components/auth/StepIndicator';
 import { useAuthStore } from '@/hooks/useAuthStore';
 import { Colors, Spacing } from '@/constants/theme';
+import { apiGet } from '@/lib/api';
+
+type AddressSuggestion = { label: string; houseNo: string; street: string; barangay: string; city: string; province: string; zip: string };
 
 const FIELD_LIMITS = {
   houseNo: { min: 1, max: 30, label: 'House number / unit' },
@@ -36,6 +42,32 @@ export default function AddressPage() {
   const [zip, setZip] = useState('');
   const [landmark, setLandmark] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [suggestions, setSuggestions] = useState<AddressSuggestion[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [lookupError, setLookupError] = useState('');
+
+  useEffect(() => {
+    const query = street.trim();
+    if (query.length < 3) {
+      setSuggestions([]);
+      setLookupError('');
+      return;
+    }
+    const timer = setTimeout(() => {
+      setSearching(true);
+      apiGet<{ suggestions: AddressSuggestion[] }>(`/auth/address-autocomplete?text=${encodeURIComponent(query)}`)
+        .then((result) => {
+          setSuggestions(result.suggestions ?? []);
+          setLookupError('');
+        })
+        .catch((error: unknown) => {
+          setSuggestions([]);
+          setLookupError(error instanceof Error ? error.message : 'Address suggestions are unavailable right now.');
+        })
+        .finally(() => setSearching(false));
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [street]);
 
   const validate = () => {
     const e: Record<string, string> = {};
@@ -86,7 +118,7 @@ export default function AddressPage() {
     const fullAddress = [houseNo, street, barangay, city, province, zip]
       .filter(Boolean)
       .join(', ');
-    setDraft({ shipping_address: fullAddress });
+    setDraft({ shipping_address: fullAddress, address_house_no: houseNo, address_street: street, address_barangay: barangay, address_city: city, address_province: province, address_zip: zip });
     router.push('/(auth)/email');
   };
 
@@ -126,6 +158,26 @@ export default function AddressPage() {
             autoCapitalize="words"
             maxLength={FIELD_LIMITS.street.max}
           />
+          {searching ? <Text style={styles.suggestionHint}>Finding addresses…</Text> : null}
+          {lookupError ? <Text style={styles.lookupError}>{lookupError}</Text> : null}
+          {suggestions.length ? (
+            <View style={styles.suggestions}>
+              {suggestions.map((suggestion, index) => (
+                <TouchableOpacity
+                  key={`${suggestion.label}-${index}`}
+                  style={styles.suggestion}
+                  onPress={() => {
+                    setHouseNo(suggestion.houseNo || houseNo); setStreet(suggestion.street || street);
+                    setBarangay(suggestion.barangay || barangay); setCity(suggestion.city || city);
+                    setProvince(suggestion.province || province); setZip((suggestion.zip || zip).slice(0, 4));
+                    setSuggestions([]);
+                  }}
+                >
+                  <Text style={styles.suggestionText}>{suggestion.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          ) : null}
           <Input
             label="Barangay / Municipality"
             placeholder="e.g. Barangay San Lorenzo"
@@ -192,4 +244,9 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing['2xl'],
   },
   btn: { marginTop: Spacing.sm },
+  suggestionHint: { color: Colors.text.secondary, fontSize: 12, marginTop: -Spacing.sm, marginBottom: Spacing.sm },
+  lookupError: { color: Colors.status.error, fontSize: 12, marginTop: -Spacing.sm, marginBottom: Spacing.sm },
+  suggestions: { backgroundColor: Colors.bg.card, borderColor: Colors.border.default, borderWidth: 1, borderRadius: 10, marginTop: -Spacing.sm, marginBottom: Spacing.md, overflow: 'hidden' },
+  suggestion: { borderBottomColor: Colors.border.default, borderBottomWidth: 1, padding: Spacing.sm },
+  suggestionText: { color: Colors.text.primary, fontSize: 13 },
 });

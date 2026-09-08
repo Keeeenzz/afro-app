@@ -28,6 +28,7 @@ export interface AuthUser {
 
 type Draft = Partial<{
   email: string;
+  email_verification_id: string;
   password: string;
   full_name: string;
   first_name: string;
@@ -40,6 +41,12 @@ type Draft = Partial<{
   front_id_url: string;
   back_id_url: string;
   shipping_address: string;
+  address_house_no: string | null;
+  address_street: string | null;
+  address_barangay: string | null;
+  address_city: string | null;
+  address_province: string | null;
+  address_zip: string | null;
   fashion_style: string;
   preferred_size: string;
   skin_hex: string | null;

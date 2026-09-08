@@ -13,19 +13,19 @@ function TabsContent() {
       <Tabs
         screenOptions={{
           headerShown: true,
-          headerStyle: { backgroundColor: '#111827' },
-          headerTintColor: '#FFFFFF',
+          headerStyle: { backgroundColor: '#F4F7FD' },
+          headerTintColor: '#082D5C',
           headerTitleStyle: { fontWeight: '700' },
           headerRight: () => <HamburgerButton onPress={openNav} />,
           tabBarStyle: { display: 'none' },
-          tabBarActiveTintColor: '#3B82F6',
-          tabBarInactiveTintColor: '#475569',
+          tabBarActiveTintColor: '#0E4F8D',
+          tabBarInactiveTintColor: '#8CA2BA',
         }}
       >
         <Tabs.Screen name="index" options={{ title: "A'FRO", headerShown: false, tabBarLabel: 'Home', tabBarIcon: ({ color, size }) => <Ionicons name="home-outline" size={size} color={color} /> }} />
         <Tabs.Screen name="catalog" options={{ title: 'Catalog', headerShown: false, tabBarIcon: ({ color, size }) => <Ionicons name="grid-outline" size={size} color={color} /> }} />
-        <Tabs.Screen name="messages" options={{ title: 'Messages', tabBarIcon: ({ color, size }) => <Ionicons name="chatbubble-outline" size={size} color={color} /> }} />
-        <Tabs.Screen name="profile/index" options={{ title: 'Profile', headerTitle: 'Profile', tabBarButton: () => null }} />
+        <Tabs.Screen name="messages" options={{ title: 'Messages', headerShown: false, tabBarIcon: ({ color, size }) => <Ionicons name="chatbubble-outline" size={size} color={color} /> }} />
+        <Tabs.Screen name="profile/index" options={{ title: 'Profile', headerShown: false, tabBarButton: () => null }} />
         <Tabs.Screen name="orders" options={{ title: 'Orders', headerShown: false, tabBarButton: () => null }} />
         <Tabs.Screen name="cart" options={{ title: 'Cart', headerShown: false, tabBarButton: () => null }} />
         <Tabs.Screen name="reviews" options={{ title: 'Reviews', headerShown: false, tabBarButton: () => null }} />

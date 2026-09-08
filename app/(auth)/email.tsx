@@ -17,9 +17,10 @@ import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { StepIndicator } from '@/components/auth/StepIndicator';
 import { useAuthStore } from '@/hooks/useAuthStore';
 import { Colors, FontSize, Spacing } from '@/constants/theme';
+import { apiPost } from '@/lib/api';
 
 const EMAIL_MAX_LENGTH = 254;
-const OTP_EXPIRY = 4 * 60 + 14;
+const OTP_EXPIRY = 5 * 60;
 
 export default function EmailPage() {
   const router = useRouter();
@@ -34,6 +35,7 @@ export default function EmailPage() {
   const [loading, setLoading] = useState(false);
   const [secondsLeft, setSecondsLeft] = useState(OTP_EXPIRY);
   const [expired, setExpired] = useState(false);
+  const [resendUntil, setResendUntil] = useState(0);
 
   useEffect(() => {
     if (!otpSent || verified || expired) return;
@@ -48,6 +50,12 @@ export default function EmailPage() {
 
     return () => clearInterval(timer);
   }, [expired, otpSent, secondsLeft, verified]);
+
+  useEffect(() => {
+    if (resendUntil <= 0) return;
+    const timer = setInterval(() => setResendUntil((seconds) => Math.max(0, seconds - 1)), 1000);
+    return () => clearInterval(timer);
+  }, [resendUntil]);
 
   const formatTime = (secs: number) => {
     const m = Math.floor(secs / 60).toString().padStart(2, '0');
@@ -73,15 +81,15 @@ export default function EmailPage() {
     if (!validateEmail()) return;
     setLoading(true);
     try {
-      // TODO: await api.post('/auth/send-email-otp', { email });
-      await new Promise((r) => setTimeout(r, 800));
+      const result = await apiPost<{ resendAfterSeconds?: number }>('/auth/email-otp/send', { email: email.trim() });
       setOtpSent(true);
       setOtp('');
       setOtpError('');
       setExpired(false);
       setSecondsLeft(OTP_EXPIRY);
-    } catch {
-      setEmailError('Failed to send code. Try again.');
+      setResendUntil(Number(result.resendAfterSeconds ?? 60));
+    } catch (error) {
+      setEmailError(error instanceof Error ? error.message : 'Failed to send code. Try again.');
     } finally {
       setLoading(false);
     }
@@ -98,12 +106,11 @@ export default function EmailPage() {
     }
     setLoading(true);
     try {
-      // TODO: await api.post('/auth/verify-email-otp', { email, otp });
-      await new Promise((r) => setTimeout(r, 800));
+      const result = await apiPost<{ verificationId: string }>('/auth/email-otp/verify', { email: email.trim(), code: otp });
       setVerified(true);
-      setDraft({ email });
-    } catch {
-      setOtpError('Invalid code. Please try again.');
+      setDraft({ email: email.trim(), email_verification_id: result.verificationId });
+    } catch (error) {
+      setOtpError(error instanceof Error ? error.message : 'Invalid code. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -177,10 +184,10 @@ export default function EmailPage() {
                 ) : (
                   <Text style={styles.expiredText}>Code expired</Text>
                 )}
-                <TouchableOpacity onPress={handleSendOTP}>
+                <TouchableOpacity onPress={handleSendOTP} disabled={loading || resendUntil > 0}>
                   <Text style={styles.resendText}>
                     Didn't get a code?{' '}
-                    <Text style={styles.resendLink}>Resend</Text>
+                    <Text style={styles.resendLink}>{resendUntil > 0 ? `Resend in ${resendUntil}s` : 'Resend'}</Text>
                   </Text>
                 </TouchableOpacity>
               </View>

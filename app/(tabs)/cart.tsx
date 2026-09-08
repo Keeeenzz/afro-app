@@ -236,7 +236,7 @@ export default function CartScreen() {
   }
 
   return (
-    <ImageBackground source={require('@/assets/splash-icon.png')} style={styles.screen} imageStyle={styles.bgImage}>
+    <ImageBackground source={require('@/assets/afro-logo-black.png')} style={styles.screen} imageStyle={styles.bgImage}>
       <View style={styles.overlay}>
         <Header onMenu={openNav} />
 
@@ -245,10 +245,8 @@ export default function CartScreen() {
             <TouchableOpacity onPress={() => (step === 'cart' ? router.back() : setStep(step === 'receipt' ? 'checkout' : 'cart'))}>
               <Ionicons name="arrow-back" size={25} color={Colors.text.primary} />
             </TouchableOpacity>
-            <View style={styles.titlePill}>
-              <Text style={styles.titleText}>{step === 'cart' ? 'My Cart' : 'Checkout'}</Text>
-            </View>
-            {step === 'cart' ? <Ionicons name="trash" size={24} color={Colors.text.secondary} /> : <View style={{ width: 24 }} />}
+            <Text style={styles.titleText}>{step === 'cart' ? 'My Cart' : 'Checkout'}</Text>
+            <View style={{ width: 25 }} />
           </View>
         ) : null}
 
@@ -280,7 +278,7 @@ export default function CartScreen() {
                       <Ionicons
                         name={selectedIds.has(item.cartItemId) ? 'checkmark-circle' : 'ellipse-outline'}
                         size={23}
-                        color={selectedIds.has(item.cartItemId) ? '#DDF7FF' : Colors.text.secondary}
+                        color={selectedIds.has(item.cartItemId) ? '#092b61' : Colors.text.secondary}
                       />
                     </Pressable>
                     <Text style={styles.price}>{peso(Number(item.unitPrice) * Number(item.quantity))}</Text>
@@ -376,11 +374,11 @@ function Header({ onMenu }: { onMenu: () => void }) {
   return (
     <View style={styles.header}>
       <View style={styles.brandLockup}>
-        <Image source={require('@/assets/afro-logo.png')} style={styles.logo} resizeMode="contain" />
+        <Image source={require('@/assets/afro-logo-black.png')} style={styles.logo} resizeMode="contain" />
         <Text style={styles.brand}>A'FRO</Text>
       </View>
       <TouchableOpacity onPress={onMenu} style={styles.headerIcon}>
-        <Ionicons name="menu-outline" size={30} color={Colors.brand.blueLight} />
+        <Ionicons name="menu-outline" size={28} color={Colors.brand.blue} />
       </TouchableOpacity>
     </View>
   );
@@ -494,8 +492,8 @@ function SummaryCard({
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Colors.bg.primary },
-  bgImage: { opacity: 0.1, resizeMode: 'cover' },
-  overlay: { flex: 1, backgroundColor: 'rgba(10, 14, 26, 0.9)' },
+  bgImage: { opacity: 0.025, resizeMode: 'center' },
+  overlay: { flex: 1, backgroundColor: 'rgba(244, 247, 253, 0.96)' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.bg.primary },
   header: {
     paddingHorizontal: Spacing.md,
@@ -517,16 +515,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  titlePill: {
-    minWidth: 116,
-    height: 38,
-    paddingHorizontal: Spacing.lg,
-    borderRadius: Radius.full,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#334B5B',
-  },
-  titleText: { color: Colors.text.primary, fontSize: FontSize.base, fontWeight: '900' },
+  titleText: { color: Colors.text.primary, fontSize: FontSize.lg, fontWeight: '900' },
   content: { paddingHorizontal: Spacing.lg, paddingBottom: 36, gap: Spacing.md },
   itemCard: {
     minHeight: 92,
@@ -534,35 +523,35 @@ const styles = StyleSheet.create({
     padding: Spacing.sm,
     flexDirection: 'row',
     gap: Spacing.sm,
-    backgroundColor: 'rgba(86, 113, 143, 0.7)',
+    backgroundColor: Colors.bg.card,
     borderWidth: 1,
     borderColor: 'rgba(221, 241, 255, 0.14)',
   },
   cartItemOpen: { flex: 1, flexDirection: 'row', gap: Spacing.sm },
-  itemImage: { width: 70, height: 70, borderRadius: Radius.sm, backgroundColor: '#A8DDFF' },
+  itemImage: { width: 70, height: 70, borderRadius: Radius.sm, backgroundColor: '#EDF4FD' },
   itemInfo: { flex: 1, justifyContent: 'center' },
   itemTitleRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
   itemName: { flex: 1, color: Colors.text.primary, fontSize: FontSize.base, fontWeight: '900' },
-  itemDesc: { color: '#D2E3F5', fontSize: FontSize.xs, marginTop: 2 },
-  itemMeta: { color: '#BCEBFF', fontSize: FontSize.xs, fontWeight: '800', marginTop: 4 },
+  itemDesc: { color: '#0f437c', fontSize: FontSize.xs, marginTop: 2 },
+  itemMeta: { color: '#30586a', fontSize: FontSize.xs, fontWeight: '800', marginTop: 4 },
   sizeBadge: {
     minWidth: 25,
     paddingHorizontal: 5,
     borderRadius: Radius.full,
-    color: Colors.text.primary,
+    color: "white",
     fontSize: 9,
     fontWeight: '900',
     textAlign: 'center',
-    backgroundColor: '#315169',
+    backgroundColor: "#123b78",
   },
   itemActions: { width: 72, alignItems: 'flex-end', justifyContent: 'space-between' },
   checkButton: { minHeight: 24, minWidth: 24, alignItems: 'center', justifyContent: 'center' },
   price: { color: Colors.text.primary, fontSize: FontSize.base, fontWeight: '900' },
-  removeText: { color: '#CFEFFF', fontSize: 10, fontWeight: '900' },
+  removeText: { color: '#083c56', fontSize: 10, fontWeight: '900' },
   summary: {
     borderRadius: Radius.md,
     padding: Spacing.md,
-    backgroundColor: 'rgba(86, 113, 143, 0.68)',
+    backgroundColor: Colors.bg.card,
     borderWidth: 1,
     borderColor: 'rgba(221, 241, 255, 0.14)',
   },
@@ -588,9 +577,7 @@ const styles = StyleSheet.create({
     borderRadius: Radius.full,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#164E67',
-    borderWidth: 1,
-    borderColor: '#61C4E6',
+    backgroundColor: Colors.brand.blue,
   },
   secondaryButton: {
     alignSelf: 'center',
@@ -605,15 +592,15 @@ const styles = StyleSheet.create({
     borderColor: '#8FA9C8',
     marginTop: Spacing.sm,
   },
-  primaryText: { color: Colors.text.primary, fontSize: FontSize.sm, fontWeight: '900' },
+  primaryText: { color: Colors.white, fontSize: FontSize.sm, fontWeight: '900' },
   disabled: { opacity: 0.45 },
   progressRow: { flexDirection: 'row', alignSelf: 'center', gap: 2, width: 210, marginBottom: Spacing.sm },
-  progressBar: { flex: 1, height: 5, backgroundColor: 'rgba(255,255,255,0.2)' },
-  progressBarActive: { backgroundColor: '#A8F2FF' },
+  progressBar: { flex: 1, height: 5, backgroundColor: '#D9E6F5' },
+  progressBarActive: { backgroundColor: Colors.brand.blue },
   panel: {
     borderRadius: Radius.md,
     padding: Spacing.md,
-    backgroundColor: 'rgba(74, 101, 132, 0.72)',
+    backgroundColor: Colors.bg.card,
     borderWidth: 1,
     borderColor: 'rgba(221, 241, 255, 0.14)',
   },

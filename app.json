@@ -6,21 +6,21 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "jsEngine": "jsc",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/afro-logo-black.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/afro-logo-black.png",
       "resizeMode": "contain",
-      "backgroundColor": "#0A0E1A"
+      "backgroundColor": "#000000"
     },
     "ios": {
       "supportsTablet": true
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#0A0E1A"
+        "foregroundImage": "./assets/afro-logo-black.png",
+        "backgroundColor": "#000000"
       },
       "package": "com.anonymous.afroapp"
     },

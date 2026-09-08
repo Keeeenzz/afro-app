@@ -9,6 +9,7 @@ import {
   Alert,
   Animated,
   Image,
+  Modal,
   SafeAreaView,
   ScrollView,
   StyleSheet,
@@ -39,6 +40,13 @@ type TryOnPhase = 'upload' | 'generating' | 'result';
 type PhotoGuideMode = 'full' | 'top';
 type MixMatchMode = 'top_bottom' | 'dress_shirt' | 'dress_top' | 'dress_bottom';
 type LayeringStyle = 'layered' | 'tucked' | 'over' | 'under';
+
+const generationMessages = [
+  'Draping the fabric…',
+  'Checking the fit…',
+  'Matching texture and folds…',
+  'Finishing your look…',
+];
 
 type Product = {
   id: string;
@@ -563,6 +571,7 @@ function FitReport({
   bodyProfile?: BodyProfile | null;
 }) {
   const [reportIndex, setReportIndex] = useState(0);
+  const [openReasons, setOpenReasons] = useState<Record<string, boolean>>({});
   const reports = products.length
     ? products.map((product) => ({
         product,
@@ -605,6 +614,9 @@ function FitReport({
   const canGoBack = activeIndex > 0;
   const canGoNext = activeIndex < reports.length - 1;
   const activeName = activeReport.product?.name ?? splitLabelValue(product ?? '').value ?? 'Report';
+  // The fit report headline is the single source of truth for this result's score.
+  // We do not receive a separate AI-confidence metric from the try-on service.
+  const fitScore = fitScoreFromHeadline(headline ?? '');
 
   useEffect(() => {
     if (reportIndex > reports.length - 1) {
@@ -638,8 +650,26 @@ function FitReport({
           </TouchableOpacity>
         </View>
       </View>
-      {headline ? <Text style={styles.reportHeadline}>{headline}</Text> : null}
-      {summary ? <Text style={styles.reportSummary}>{summary}</Text> : null}
+      <View style={styles.fitSummaryCard}>
+        <View style={styles.fitSummaryIcon}>
+          <Ionicons name="body-outline" size={20} color={Colors.brand.blue} />
+        </View>
+        <View style={styles.fitSummaryCopy}>
+          {headline ? <Text style={styles.reportHeadline}>{headline}</Text> : null}
+          {summary ? <Text style={styles.reportSummary}>{summary}</Text> : null}
+        </View>
+      </View>
+      {fitScore !== null ? (
+        <>
+          <View style={styles.confidenceRow}>
+            <Text style={styles.confidenceLabel}>Fit score</Text>
+            <Text style={styles.confidenceValue}>{fitScore}/100</Text>
+          </View>
+          <View style={styles.confidenceTrack}>
+            <View style={[styles.confidenceFill, { width: `${fitScore}%` }]} />
+          </View>
+        </>
+      ) : null}
 
       {metaItems.length ? (
         <View style={styles.reportMetaList}>
@@ -661,17 +691,34 @@ function FitReport({
 
       {sections.length ? (
         <View style={styles.reportSections}>
-          {sections.map((section, index) => (
-            <View key={`${section.title}-${index}`} style={styles.reportSection}>
-              <Text style={styles.reportSectionTitle}>{section.title}</Text>
-              {section.reasons.length ? <Text style={styles.reportReasonLabel}>Reason:</Text> : null}
-              {section.reasons.map((reason, reasonIndex) => (
-                <Text key={`${section.title}-reason-${reasonIndex}`} style={styles.reportReasonText}>
-                  {reason}
-                </Text>
-              ))}
-            </View>
-          ))}
+          {sections.map((section, index) => {
+            const key = `${section.title}-${index}`;
+            const isOpen = !!openReasons[key];
+            const { label, value } = splitLabelValue(section.title);
+            return (
+              <View key={key} style={styles.reportSection}>
+                <View style={styles.reportSectionHeading}>
+                  <Text style={styles.reportSectionTitle}>{label}</Text>
+                  {value ? <Text style={styles.fitStatus}>{value}</Text> : null}
+                </View>
+                <TouchableOpacity
+                  style={styles.whyResultButton}
+                  onPress={() => setOpenReasons((current) => ({ ...current, [key]: !isOpen }))}
+                  activeOpacity={0.76}
+                >
+                  <Text style={styles.whyResultText}>Why this result</Text>
+                  <Ionicons name={isOpen ? 'chevron-up' : 'chevron-down'} size={16} color={Colors.text.secondary} />
+                </TouchableOpacity>
+                {isOpen ? (
+                  <Text style={styles.reportReasonText}>
+                    {section.reasons.length
+                      ? section.reasons.join(' ')
+                      : 'This result is based on your saved measurements and the selected garment details.'}
+                  </Text>
+                ) : null}
+              </View>
+            );
+          })}
         </View>
       ) : null}
     </View>
@@ -735,12 +782,20 @@ export default function TryOnScreen() {
   const [sessionHeightCm, setSessionHeightCm] = useState('');
   const [generationProgress, setGenerationProgress] = useState(0);
   const [portraitAspectRatio, setPortraitAspectRatio] = useState(1);
+  const [generationMessageIndex, setGenerationMessageIndex] = useState(0);
+  const [resultPreviewOpen, setResultPreviewOpen] = useState(false);
   const loadingDotScales = useRef([new Animated.Value(1), new Animated.Value(1), new Animated.Value(1)]).current;
   const progressAnim = useRef(new Animated.Value(0)).current;
+  const scanAnim = useRef(new Animated.Value(0)).current;
+  const generationMessageOpacity = useRef(new Animated.Value(1)).current;
   const mountedRef = useRef(true);
   const progressFillWidth = progressAnim.interpolate({
     inputRange: [0, 100],
     outputRange: ['0%', '100%'],
+  });
+  const scanTranslateY = scanAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [-280, 280],
   });
 
   const animateGenerationProgress = useCallback((value: number, duration = 360) => {
@@ -759,6 +814,32 @@ export default function TryOnScreen() {
       mountedRef.current = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (phase !== 'generating') {
+      scanAnim.stopAnimation();
+      scanAnim.setValue(0);
+      generationMessageOpacity.setValue(1);
+      return;
+    }
+
+    const scanLoop = Animated.loop(
+      Animated.timing(scanAnim, { toValue: 1, duration: 1900, useNativeDriver: true }),
+    );
+    scanLoop.start();
+    const messageTimer = setInterval(() => {
+      Animated.sequence([
+        Animated.timing(generationMessageOpacity, { toValue: 0.25, duration: 170, useNativeDriver: true }),
+        Animated.timing(generationMessageOpacity, { toValue: 1, duration: 300, useNativeDriver: true }),
+      ]).start();
+      setGenerationMessageIndex((index) => (index + 1) % generationMessages.length);
+    }, 3200);
+
+    return () => {
+      scanLoop.stop();
+      clearInterval(messageTimer);
+    };
+  }, [generationMessageOpacity, phase, scanAnim]);
 
   useEffect(() => {
     if (tryOnJob.status === 'idle') return;
@@ -1217,23 +1298,34 @@ export default function TryOnScreen() {
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.header}>
-        <TouchableOpacity style={styles.headerIcon} onPress={() => router.back()} activeOpacity={0.75}>
-          <Ionicons name="chevron-back" size={26} color={Colors.text.primary} />
-        </TouchableOpacity>
         <View style={styles.brandLockup}>
-          <View style={styles.logoMark}>
-            <Image source={require('../../assets/afro-logo.png')} style={styles.headerLogoImage} resizeMode="contain" />
-          </View>
+          <Image source={require('../../assets/afro-logo-black.png')} style={styles.headerLogoImage} resizeMode="contain" />
           <Text style={styles.brand}>A'FRO</Text>
         </View>
         <TouchableOpacity style={styles.headerIcon} onPress={openNav} activeOpacity={0.75}>
-          <Ionicons name="menu-outline" size={30} color={Colors.brand.blueLight} />
+          <Ionicons name="menu-outline" size={28} color={Colors.brand.blue} />
         </TouchableOpacity>
+      </View>
+
+      <View style={styles.titleRow}>
+        <TouchableOpacity
+          style={styles.headerIcon}
+          onPress={() => {
+            if (phase !== 'generating') {
+              useTryOnJobStore.getState().clear();
+            }
+            router.back();
+          }}
+          activeOpacity={0.75}
+        >
+          <Ionicons name="arrow-back" size={25} color={Colors.text.primary} />
+        </TouchableOpacity>
+        <Text style={styles.pageTitle}>Try On</Text>
+        <View style={styles.headerIcon} />
       </View>
 
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
         <View style={styles.panel}>
-          <Text style={styles.pillTitle}>Try it On</Text>
           <View style={styles.progressRow}>
             {[1, 2, 3].map((step) => (
               <View key={step} style={[styles.progressBar, step <= progressIndex && styles.progressBarActive]} />
@@ -1357,15 +1449,20 @@ export default function TryOnScreen() {
             <View style={styles.generatingWrap}>
               <View style={styles.personPreviewBox}>
                 {personUri ? <Image source={{ uri: personUri }} style={styles.personPreview} resizeMode="contain" /> : null}
-              </View>
-              <View style={styles.generatingPill}>
-                <ActivityIndicator color={Colors.text.primary} size="small" />
-                <Text style={styles.generatingPillText}>Generating image...</Text>
+                <Animated.View
+                  pointerEvents="none"
+                  style={[styles.scanLine, { transform: [{ translateY: scanTranslateY }] }]}
+                />
+                <View style={styles.scanLabel}>
+                  <View style={styles.scanLabelDot} />
+                  <Text style={styles.scanLabelText}>Scanning your photo</Text>
+                </View>
               </View>
               <Text style={styles.generatingTitle}>Fitting your look</Text>
-              <Text style={styles.generatingText}>
-                Our app is draping your selected item{selectedProducts.length > 1 ? 's' : ''} onto your photo.
-              </Text>
+              <Animated.Text style={[styles.generatingStepText, { opacity: generationMessageOpacity }]}>
+                {generationMessages[generationMessageIndex]}
+              </Animated.Text>
+              <Text style={styles.generatingText}>This may take a moment. Your fit preview is on its way.</Text>
               <View style={styles.dots}>
                 {loadingDotScales.map((dotScale, index) => (
                   <Animated.View
@@ -1398,20 +1495,21 @@ export default function TryOnScreen() {
                 </TouchableOpacity>
               </View>
 
-              <View style={styles.resultImageBox}>
-                <ScrollView
-                  maximumZoomScale={3}
-                  minimumZoomScale={1}
-                  centerContent
-                  contentContainerStyle={styles.zoomContent}
-                >
-                  {resultImageSource ? (
-                    <Image source={resultImageSource} style={styles.resultImage} resizeMode="contain" />
-                  ) : (
-                    <Ionicons name="image-outline" size={40} color={Colors.text.secondary} />
-                  )}
-                </ScrollView>
-              </View>
+              <TouchableOpacity
+                style={styles.resultImageBox}
+                onPress={() => resultImageSource && setResultPreviewOpen(true)}
+                activeOpacity={0.9}
+              >
+                {resultImageSource ? (
+                  <Image source={resultImageSource} style={styles.resultImage} resizeMode="contain" />
+                ) : (
+                  <Ionicons name="image-outline" size={40} color={Colors.text.secondary} />
+                )}
+                <View style={styles.expandHint} pointerEvents="none">
+                  <Ionicons name="expand-outline" size={14} color={Colors.white} />
+                  <Text style={styles.expandHintText}>Tap to view full size</Text>
+                </View>
+              </TouchableOpacity>
 
               <View style={styles.resultActions}>
                 <TouchableOpacity style={styles.smallAction} onPress={saveGeneratedImage} disabled={savingImage}>
@@ -1470,6 +1568,17 @@ export default function TryOnScreen() {
           ) : null}
         </View>
       </ScrollView>
+      <Modal
+        visible={resultPreviewOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setResultPreviewOpen(false)}
+      >
+        <TouchableOpacity style={styles.fullPreviewBackdrop} activeOpacity={1} onPress={() => setResultPreviewOpen(false)}>
+          {resultImageSource ? <Image source={resultImageSource} style={styles.fullPreviewImage} resizeMode="contain" /> : null}
+          <Text style={styles.fullPreviewHint}>Tap anywhere to close</Text>
+        </TouchableOpacity>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1617,13 +1726,11 @@ const styles = StyleSheet.create({
   },
   header: {
     alignItems: 'center',
-    borderBottomColor: Colors.border.subtle,
-    borderBottomWidth: 1,
     flexDirection: 'row',
-    height: 76,
+    height: 64,
     justifyContent: 'space-between',
     paddingHorizontal: Spacing.md,
-    paddingTop: Spacing.md,
+    paddingTop: Spacing.sm,
   },
   headerIcon: {
     alignItems: 'center',
@@ -1636,18 +1743,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: Spacing.sm,
   },
-  logoMark: {
-    alignItems: 'center',
-    backgroundColor: '#E8F4FF',
-    borderRadius: 14,
-    height: 28,
-    justifyContent: 'center',
-    overflow: 'hidden',
-    width: 28,
-  },
   headerLogoImage: {
-    height: 27,
-    width: 27,
+    height: 30,
+    width: 30,
   },
   brand: {
     color: Colors.text.primary,
@@ -1658,28 +1756,15 @@ const styles = StyleSheet.create({
     padding: Spacing.md,
     paddingBottom: 140,
   },
+  titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: Spacing.md, marginBottom: Spacing.sm },
+  pageTitle: { color: Colors.text.primary, fontSize: FontSize.lg, fontWeight: '900' },
   panel: {
-    backgroundColor: 'rgba(26, 34, 53, 0.9)',
+    backgroundColor: Colors.bg.card,
     borderColor: Colors.border.default,
     borderRadius: Radius.lg,
     borderWidth: 1,
     marginBottom: Spacing['2xl'],
     padding: Spacing.md,
-  },
-  pillTitle: {
-    alignSelf: 'center',
-    backgroundColor: Colors.bg.input,
-    borderColor: Colors.border.default,
-    borderRadius: Radius.full,
-    borderWidth: 1,
-    color: Colors.text.primary,
-    fontSize: FontSize.base,
-    fontWeight: '900',
-    marginBottom: Spacing.md,
-    minWidth: 132,
-    overflow: 'hidden',
-    paddingVertical: 7,
-    textAlign: 'center',
   },
   progressRow: {
     flexDirection: 'row',
@@ -1687,13 +1772,13 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.lg,
   },
   progressBar: {
-    backgroundColor: 'rgba(255,255,255,0.24)',
+    backgroundColor: '#D9E6F5',
     borderRadius: 3,
     flex: 1,
     height: 5,
   },
   progressBarActive: {
-    backgroundColor: '#9AE9F5',
+    backgroundColor: Colors.brand.blue,
   },
   guideTabs: {
     flexDirection: 'row',
@@ -1703,8 +1788,8 @@ const styles = StyleSheet.create({
   },
   guideTab: {
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    borderColor: Colors.border.subtle,
+    backgroundColor: Colors.bg.input,
+    borderColor: Colors.border.default,
     borderRadius: Radius.md,
     borderWidth: 1,
     flex: 1,
@@ -1714,8 +1799,8 @@ const styles = StyleSheet.create({
     minHeight: 38,
   },
   guideTabActive: {
-    backgroundColor: 'rgba(154, 233, 245, 0.22)',
-    borderColor: '#9AE9F5',
+    backgroundColor: '#EAF4FF',
+    borderColor: Colors.brand.blue,
   },
   guideTabText: {
     color: Colors.text.primary,
@@ -1846,7 +1931,7 @@ const styles = StyleSheet.create({
   },
   photoAction: {
     alignItems: 'center',
-    backgroundColor: '#276296',
+    backgroundColor: Colors.brand.blue,
     borderRadius: Radius.md,
     flex: 1,
     flexDirection: 'row',
@@ -1855,13 +1940,13 @@ const styles = StyleSheet.create({
     minHeight: 42,
   },
   photoActionText: {
-    color: Colors.text.primary,
+    color: Colors.white,
     fontSize: FontSize.xs,
     fontWeight: '700',
   },
   bestBox: {
-    backgroundColor: 'rgba(8, 14, 27, 0.78)',
-    borderColor: Colors.border.subtle,
+    backgroundColor: Colors.bg.card,
+    borderColor: Colors.border.default,
     borderRadius: Radius.md,
     borderWidth: 1,
     marginBottom: Spacing.md,
@@ -1874,8 +1959,8 @@ const styles = StyleSheet.create({
     marginTop: Spacing.sm,
   },
   measurementBox: {
-    backgroundColor: 'rgba(8, 14, 27, 0.78)',
-    borderColor: Colors.border.subtle,
+    backgroundColor: Colors.bg.card,
+    borderColor: Colors.border.default,
     borderRadius: Radius.md,
     borderWidth: 1,
     marginBottom: Spacing.md,
@@ -1888,7 +1973,7 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.sm,
   },
   measurementHint: {
-    color: '#9AE9F5',
+    color: Colors.brand.blue,
     fontSize: 10,
     fontWeight: '900',
     textTransform: 'uppercase',
@@ -1900,7 +1985,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   bulletDot: {
-    backgroundColor: '#9AE9F5',
+    backgroundColor: Colors.brand.blue,
     borderRadius: 3,
     height: 6,
     width: 6,
@@ -1921,8 +2006,8 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   measureInput: {
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    borderColor: 'rgba(206, 232, 255, 0.28)',
+    backgroundColor: Colors.bg.input,
+    borderColor: Colors.border.default,
     borderRadius: Radius.sm,
     borderWidth: 1,
     color: Colors.text.primary,
@@ -1953,8 +2038,8 @@ const styles = StyleSheet.create({
   },
   selectedCard: {
     alignItems: 'center',
-    backgroundColor: 'rgba(96, 132, 166, 0.62)',
-    borderColor: 'rgba(206, 232, 255, 0.2)',
+    backgroundColor: Colors.bg.card,
+    borderColor: Colors.border.default,
     borderRadius: Radius.md,
     borderWidth: 1,
     flexDirection: 'row',
@@ -1985,7 +2070,7 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   selectedMeta: {
-    color: '#D6E7F6',
+    color: Colors.text.secondary,
     fontSize: FontSize.xs,
     marginTop: 2,
   },
@@ -2029,8 +2114,8 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.xl,
   },
   miniCard: {
-    backgroundColor: 'rgba(96, 132, 166, 0.62)',
-    borderColor: 'rgba(206, 232, 255, 0.24)',
+    backgroundColor: Colors.bg.card,
+    borderColor: Colors.border.default,
     borderRadius: Radius.md,
     borderWidth: 1,
     justifyContent: 'space-between',
@@ -2078,14 +2163,14 @@ const styles = StyleSheet.create({
   },
   miniAddButton: {
     alignItems: 'center',
-    backgroundColor: '#D8EDFF',
+    backgroundColor: '#EAF4FF',
     borderRadius: Radius.full,
     justifyContent: 'center',
     minHeight: 22,
     paddingHorizontal: 7,
   },
   miniAddButtonSelected: {
-    backgroundColor: 'rgba(255,255,255,0.2)',
+    backgroundColor: Colors.brand.blue,
   },
   miniAdd: {
     color: Colors.bg.primary,
@@ -2111,7 +2196,7 @@ const styles = StyleSheet.create({
   primaryAction: {
     alignItems: 'center',
     alignSelf: 'center',
-    backgroundColor: '#0B809A',
+    backgroundColor: Colors.brand.blue,
     borderRadius: Radius.full,
     justifyContent: 'center',
     marginTop: Spacing.sm,
@@ -2131,7 +2216,7 @@ const styles = StyleSheet.create({
   },
   personPreviewBox: {
     alignItems: 'center',
-    borderColor: 'rgba(154, 233, 245, 0.8)',
+    borderColor: Colors.border.active,
     borderRadius: Radius.md,
     borderStyle: 'dashed',
     borderWidth: 1,
@@ -2139,16 +2224,50 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: Spacing.xl,
     overflow: 'hidden',
+    position: 'relative',
     width: '92%',
   },
   personPreview: {
     height: '100%',
     width: '100%',
   },
+  scanLine: {
+    backgroundColor: 'rgba(47, 126, 198, 0.20)',
+    borderBottomColor: Colors.brand.blue,
+    borderBottomWidth: 2,
+    height: 84,
+    left: 0,
+    position: 'absolute',
+    right: 0,
+    top: 0,
+  },
+  scanLabel: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(8, 42, 81, 0.84)',
+    borderRadius: Radius.full,
+    bottom: Spacing.sm,
+    flexDirection: 'row',
+    gap: 6,
+    left: Spacing.sm,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 5,
+    position: 'absolute',
+  },
+  scanLabelDot: {
+    backgroundColor: Colors.status.success,
+    borderRadius: 4,
+    height: 6,
+    width: 6,
+  },
+  scanLabelText: {
+    color: Colors.white,
+    fontSize: FontSize.xs,
+    fontWeight: '800',
+  },
   generatingPill: {
     alignItems: 'center',
-    backgroundColor: 'rgba(96, 132, 166, 0.62)',
-    borderColor: 'rgba(206, 232, 255, 0.24)',
+    backgroundColor: Colors.bg.card,
+    borderColor: Colors.border.default,
     borderRadius: Radius.full,
     borderWidth: 1,
     flexDirection: 'row',
@@ -2167,6 +2286,12 @@ const styles = StyleSheet.create({
     fontSize: FontSize.xl,
     fontWeight: '900',
   },
+  generatingStepText: {
+    color: Colors.brand.blue,
+    fontSize: FontSize.sm,
+    fontWeight: '900',
+    marginTop: Spacing.sm,
+  },
   generatingText: {
     color: Colors.text.secondary,
     fontSize: FontSize.sm,
@@ -2180,7 +2305,7 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.sm,
   },
   dot: {
-    backgroundColor: '#22D3EE',
+    backgroundColor: Colors.brand.blue,
     borderRadius: 6,
     height: 12,
     width: 22,
@@ -2194,7 +2319,9 @@ const styles = StyleSheet.create({
   backgroundBrowseButton: {
     alignItems: 'center',
     alignSelf: 'center',
-    backgroundColor: 'rgba(255,255,255,0.2)',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: Colors.border.default,
     borderRadius: Radius.full,
     flexDirection: 'row',
     gap: Spacing.sm,
@@ -2204,7 +2331,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
   },
   progressPercentTrack: {
-    backgroundColor: 'rgba(255,255,255,0.16)',
+    backgroundColor: '#D9E6F5',
     borderRadius: Radius.full,
     height: 8,
     marginTop: Spacing.sm,
@@ -2212,7 +2339,7 @@ const styles = StyleSheet.create({
     width: '72%',
   },
   progressPercentFill: {
-    backgroundColor: '#22D3EE',
+    backgroundColor: Colors.brand.blue,
     borderRadius: Radius.full,
     height: '100%',
   },
@@ -2237,7 +2364,7 @@ const styles = StyleSheet.create({
   },
   resultImageBox: {
     alignItems: 'center',
-    backgroundColor: 'rgba(8, 14, 27, 0.78)',
+    backgroundColor: '#FFFFFF',
     borderColor: Colors.border.default,
     borderRadius: Radius.md,
     borderStyle: 'dashed',
@@ -2245,6 +2372,7 @@ const styles = StyleSheet.create({
     height: 250,
     justifyContent: 'center',
     overflow: 'hidden',
+    position: 'relative',
   },
   zoomContent: {
     alignItems: 'center',
@@ -2256,6 +2384,23 @@ const styles = StyleSheet.create({
     height: 250,
     width: 280,
   },
+  expandHint: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(8, 42, 81, 0.80)',
+    borderRadius: Radius.full,
+    bottom: Spacing.sm,
+    flexDirection: 'row',
+    gap: 5,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 5,
+    position: 'absolute',
+    right: Spacing.sm,
+  },
+  expandHintText: {
+    color: Colors.white,
+    fontSize: 10,
+    fontWeight: '800',
+  },
   resultActions: {
     flexDirection: 'row',
     gap: Spacing.sm,
@@ -2264,7 +2409,7 @@ const styles = StyleSheet.create({
   },
   smallAction: {
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.25)',
+    backgroundColor: '#EAF4FF',
     borderRadius: Radius.full,
     flexDirection: 'row',
     gap: 5,
@@ -2277,8 +2422,8 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   reportBox: {
-    backgroundColor: '#07111F',
-    borderColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: Colors.bg.card,
+    borderColor: Colors.border.default,
     borderRadius: Radius.md,
     borderWidth: 1,
     marginBottom: Spacing.md,
@@ -2306,7 +2451,7 @@ const styles = StyleSheet.create({
   },
   reportPagerButton: {
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: '#FFFFFF',
     borderRadius: Radius.full,
     height: 34,
     justifyContent: 'center',
@@ -2316,11 +2461,11 @@ const styles = StyleSheet.create({
     opacity: 0.28,
   },
   reportScore: {
-    backgroundColor: 'rgba(17, 91, 111, 0.62)',
-    borderColor: 'rgba(154, 233, 245, 0.42)',
+    backgroundColor: '#EAF4FF',
+    borderColor: Colors.border.active,
     borderRadius: Radius.full,
     borderWidth: 1,
-    color: '#9AE9F5',
+    color: Colors.brand.blue,
     flexShrink: 1,
     fontSize: FontSize.sm,
     fontWeight: '900',
@@ -2334,20 +2479,64 @@ const styles = StyleSheet.create({
     fontSize: FontSize.md,
     fontWeight: '900',
     lineHeight: 22,
-    marginBottom: Spacing.sm,
-    textAlign: 'center',
+    textAlign: 'left',
   },
   reportSummary: {
-    color: Colors.text.primary,
-    fontSize: FontSize.md,
-    fontWeight: '800',
-    lineHeight: 24,
+    color: Colors.text.secondary,
+    fontSize: FontSize.sm,
+    lineHeight: 19,
+    marginTop: 2,
+  },
+  fitSummaryCard: {
+    alignItems: 'center',
+    backgroundColor: '#97d6ee',
+    borderRadius: Radius.md,
+    flexDirection: 'row',
+    gap: Spacing.sm,
     marginBottom: Spacing.md,
-    textAlign: 'center',
+    padding: Spacing.md,
+  },
+  fitSummaryIcon: {
+    alignItems: 'center',
+    backgroundColor: '#408cbb',
+    borderRadius: Radius.sm,
+    height: 42,
+    justifyContent: 'center',
+    width: 42,
+  },
+  fitSummaryCopy: {
+    flex: 1,
+  },
+  confidenceRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  confidenceLabel: {
+    color: Colors.text.secondary,
+    fontSize: FontSize.xs,
+    fontWeight: '700',
+  },
+  confidenceValue: {
+    color: Colors.brand.blue,
+    fontSize: FontSize.xs,
+    fontWeight: '900',
+  },
+  confidenceTrack: {
+    backgroundColor: '#D9E6F5',
+    borderRadius: Radius.full,
+    height: 4,
+    marginBottom: Spacing.sm,
+    marginTop: 6,
+    overflow: 'hidden',
+  },
+  confidenceFill: {
+    backgroundColor: Colors.brand.blue,
+    borderRadius: Radius.full,
+    height: '100%',
   },
   reportMetaList: {
     alignItems: 'center',
-    borderBottomColor: 'rgba(255,255,255,0.16)',
+    borderBottomColor: Colors.border.default,
     borderBottomWidth: 1,
     gap: 8,
     justifyContent: 'center',
@@ -2364,7 +2553,7 @@ const styles = StyleSheet.create({
   },
   reportMeasurements: {
     alignItems: 'center',
-    borderBottomColor: 'rgba(255,255,255,0.16)',
+    borderBottomColor: Colors.border.default,
     borderBottomWidth: 1,
     paddingVertical: Spacing.md,
   },
@@ -2385,16 +2574,44 @@ const styles = StyleSheet.create({
     paddingTop: Spacing.md,
   },
   reportSection: {
-    borderBottomColor: 'rgba(255,255,255,0.14)',
-    borderBottomWidth: 1,
-    paddingBottom: Spacing.md,
+    backgroundColor: Colors.bg.input,
+    borderRadius: Radius.md,
+    padding: Spacing.md,
+  },
+  reportSectionHeading: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
   },
   reportSectionTitle: {
     color: Colors.text.primary,
     fontSize: FontSize.md,
     fontWeight: '900',
     lineHeight: 22,
-    marginBottom: 8,
+  },
+  fitStatus: {
+    backgroundColor: '#4ab5c3',
+    borderRadius: Radius.full,
+    color: '#183f7a',
+    fontSize: FontSize.xs,
+    fontWeight: '900',
+    overflow: 'hidden',
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 4,
+  },
+  whyResultButton: {
+    alignItems: 'center',
+    borderTopColor: Colors.border.default,
+    borderTopWidth: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: Spacing.sm,
+    paddingTop: Spacing.sm,
+  },
+  whyResultText: {
+    color: Colors.text.secondary,
+    fontSize: FontSize.xs,
+    fontWeight: '800',
   },
   reportReasonLabel: {
     color: Colors.text.primary,
@@ -2406,7 +2623,24 @@ const styles = StyleSheet.create({
     color: Colors.text.secondary,
     fontSize: FontSize.sm,
     lineHeight: 22,
-    marginBottom: 6,
+    marginTop: Spacing.sm,
+  },
+  fullPreviewBackdrop: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(6, 21, 39, 0.95)',
+    flex: 1,
+    justifyContent: 'center',
+    padding: Spacing.md,
+  },
+  fullPreviewImage: {
+    height: '82%',
+    width: '100%',
+  },
+  fullPreviewHint: {
+    color: Colors.white,
+    fontSize: FontSize.sm,
+    fontWeight: '700',
+    marginTop: Spacing.md,
   },
   bottomActions: {
     flexDirection: 'row',
@@ -2415,7 +2649,9 @@ const styles = StyleSheet.create({
   },
   secondaryAction: {
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.2)',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: Colors.border.active,
     borderRadius: Radius.full,
     flex: 1,
     justifyContent: 'center',
@@ -2428,7 +2664,7 @@ const styles = StyleSheet.create({
   },
   primaryHalfAction: {
     alignItems: 'center',
-    backgroundColor: '#0B809A',
+    backgroundColor: Colors.brand.blue,
     borderRadius: Radius.full,
     flex: 1,
     justifyContent: 'center',

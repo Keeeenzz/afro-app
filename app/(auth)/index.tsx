@@ -16,12 +16,14 @@ export default function SignInPage() {
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.logoContainer}>
+        <View style={styles.logoTile}>
+          <Image source={require('../../assets/afro-logo-black.png')} style={styles.logoImage} resizeMode="contain" />
+        </View>
         <View style={styles.brandTextWrap}>
           <Text style={styles.brand}>A'FRO</Text>
           <Text style={styles.tagline}>Dry Goods</Text>
           <Text style={styles.sub}>THRIFT - STYLE - COMMUNITY</Text>
         </View>
-        <Image source={require('../../assets/afro-logo.png')} style={styles.logoImage} resizeMode="contain" />
       </View>
 
       <View style={styles.bottom}>
@@ -54,22 +56,29 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing['2xl'],
+    paddingTop: Spacing.xl,
+  },
+  logoTile: {
+    width: 210,
+    height: 210,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: Spacing.lg,
   },
   brandTextWrap: {
     alignItems: 'center',
-    marginBottom: Spacing.xl,
+    marginBottom: 0,
   },
   brand: {
     fontSize: FontSize['3xl'],
     fontWeight: '900',
-    color: Colors.white,
+    color: Colors.text.primary,
     textAlign: 'center',
   },
   tagline: {
     fontSize: FontSize['2xl'],
     fontWeight: '900',
-    color: Colors.white,
+    color: Colors.text.primary,
     marginTop: -4,
     textAlign: 'center',
   },
@@ -80,9 +89,8 @@ const styles = StyleSheet.create({
     marginTop: Spacing.sm,
   },
   logoImage: {
-    height: 300,
-    maxWidth: 320,
-    width: '86%',
+    height: 200,
+    width: 200,
   },
   bottom: {
     paddingHorizontal: Spacing.xl,

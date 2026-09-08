@@ -6,8 +6,10 @@ import {
   SafeAreaView,
   ScrollView,
   TouchableOpacity,
+  Image,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '@/hooks/useAuthStore';
 import { Colors, FontSize, Radius, Spacing } from '@/constants/theme';
 import { InfoTab } from '@/components/profile/info';
@@ -15,12 +17,14 @@ import { OrdersTab } from '@/components/profile/orders-tab';
 import { SavedTab } from '@/components/profile/saved';
 import { StyleTab } from '@/components/profile/style';
 import { apiGet } from '@/lib/api';
+import { useNav } from '@/context/NavContext';
 
 type Tab = 'Info' | 'Orders' | 'Saved' | 'Style';
 
 export default function ProfileScreen() {
   const { user, token } = useAuthStore();
   const router = useRouter();
+  const { openNav } = useNav();
   const params = useLocalSearchParams<{ tab?: string }>();
   const [activeTab, setActiveTab] = useState<Tab>('Info');
   const [summary, setSummary] = useState({ orders: 0, saved: 0, reviews: 0 });
@@ -49,6 +53,20 @@ return (
     <SafeAreaView style={styles.safe}>
 {/* Profile header - fixed */}
 <View style={styles.profileHeader}>
+  <View style={styles.mainHeader}>
+    <View style={styles.brandLockup}>
+      <Image source={require('@/assets/afro-logo-black.png')} style={styles.brandLogo} resizeMode="contain" />
+      <Text style={styles.brandText}>A'FRO</Text>
+    </View>
+    <TouchableOpacity style={styles.menuButton} onPress={openNav}>
+      <Ionicons name="menu-outline" size={28} color={Colors.brand.blue} />
+    </TouchableOpacity>
+  </View>
+  <View style={styles.pageTitleRow}>
+    <TouchableOpacity style={styles.backButton} onPress={() => router.back()}><Ionicons name="arrow-back" size={25} color={Colors.text.primary} /></TouchableOpacity>
+    <Text style={styles.pageTitle}>Profile</Text>
+    <View style={styles.backButton} />
+  </View>
   <View style={styles.headerCard}>
     {/* Avatar */}
     <View style={styles.avatar}>
@@ -183,6 +201,14 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     textDecorationLine: 'underline',
   },
+  mainHeader: { height: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: Spacing.sm },
+  brandLockup: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  brandLogo: { width: 28, height: 28 },
+  brandText: { color: Colors.text.primary, fontSize: FontSize.lg, fontWeight: '900' },
+  menuButton: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center' },
+  pageTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: Spacing.md },
+  backButton: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  pageTitle: { color: Colors.text.primary, fontSize: FontSize.lg, fontWeight: '900', textAlign: 'center' },
   statsRow: { flexDirection: 'row', gap: Spacing.lg },
   stat: { alignItems: 'center' },
   statNum: { fontSize: FontSize.lg, fontWeight: '800', color: Colors.text.primary },

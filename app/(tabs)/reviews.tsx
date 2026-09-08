@@ -90,7 +90,7 @@ function peso(value: number) {
 
 function formatDate(value?: string) {
   if (!value) return '';
-  return new Intl.DateTimeFormat('en-PH', { month: 'short', day: 'numeric' }).format(new Date(value));
+  return new Intl.DateTimeFormat('en-PH', { month: 'short', day: 'numeric', timeZone: 'Asia/Manila' }).format(new Date(value));
 }
 
 function makePhotoPart(photo: ImagePicker.ImagePickerAsset) {
@@ -298,7 +298,7 @@ export default function ReviewsScreen() {
   const showForm = Boolean(productId);
 
   return (
-    <ImageBackground source={require('@/assets/splash-icon.png')} style={styles.screen} imageStyle={styles.bgImage}>
+    <ImageBackground source={require('@/assets/afro-logo-black.png')} style={styles.screen} imageStyle={styles.bgImage}>
       <View style={styles.overlay}>
         <Header
           title={selectedReview ? 'Review Details' : showForm ? 'Leave Review' : 'Reviews'}
@@ -330,7 +330,7 @@ export default function ReviewsScreen() {
                 <View style={styles.starRow}>
                   {[1, 2, 3, 4, 5].map((value) => (
                     <TouchableOpacity key={value} onPress={() => setRating(value)} activeOpacity={0.75}>
-                      <Ionicons name={value <= rating ? 'star' : 'star-outline'} size={38} color="#FFF7D6" />
+                      <Ionicons name={value <= rating ? 'star' : 'star-outline'} size={38} color="#185ab7" />
                     </TouchableOpacity>
                   ))}
                 </View>
@@ -461,18 +461,19 @@ function Header({ title, onBack, onMenu }: { title: string; onBack: () => void; 
     <View style={styles.header}>
       <View style={styles.headerTop}>
         <View style={styles.brandRow}>
-          <Image source={require('@/assets/afro-logo.png')} style={styles.logo} resizeMode="contain" />
+        <Image source={require('@/assets/afro-logo-black.png')} style={styles.logo} resizeMode="contain" />
           <Text style={styles.brand}>A'FRO</Text>
         </View>
         <TouchableOpacity onPress={onMenu} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-          <Ionicons name="menu-outline" size={30} color={Colors.brand.blueLight} />
+          <Ionicons name="menu-outline" size={28} color={Colors.brand.blue} />
         </TouchableOpacity>
       </View>
-      <TouchableOpacity style={styles.backButton} onPress={onBack}>
-        <Ionicons name="arrow-back" size={26} color={Colors.text.primary} />
-      </TouchableOpacity>
-      <View style={styles.titlePill}>
+      <View style={styles.titleRow}>
+        <TouchableOpacity style={styles.backButton} onPress={onBack}>
+          <Ionicons name="arrow-back" size={26} color={Colors.text.primary} />
+        </TouchableOpacity>
         <Text style={styles.titleText}>{title}</Text>
+        <View style={styles.backButton} />
       </View>
     </View>
   );
@@ -501,7 +502,7 @@ function ReviewCard({
         </View>
         <View style={styles.smallStars}>
           {[1, 2, 3, 4, 5].map((value) => (
-            <Ionicons key={value} name={value <= Number(review.rating) ? 'star' : 'star-outline'} size={13} color="#FFF7D6" />
+            <Ionicons key={value} name={value <= Number(review.rating) ? 'star' : 'star-outline'} size={13} color="#185ab7" />
           ))}
         </View>
       </View>
@@ -598,47 +599,36 @@ function ReviewDetail({
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Colors.bg.primary },
-  bgImage: { opacity: 0.18, resizeMode: 'cover' },
-  overlay: { flex: 1, backgroundColor: 'rgba(10, 14, 26, 0.9)' },
+  bgImage: { opacity: 0.025, resizeMode: 'center' },
+  overlay: { flex: 1, backgroundColor: 'rgba(244, 247, 253, 0.96)' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.bg.primary },
-  header: { height: 192, paddingHorizontal: Spacing.md, paddingTop: 44 },
+  header: { height: 154, paddingHorizontal: Spacing.md, paddingTop: 44 },
   headerTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   brandRow: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
   logo: { width: 30, height: 30 },
   brand: { flex: 1, color: Colors.text.primary, fontSize: FontSize.lg, fontWeight: '900' },
-  backButton: { position: 'absolute', left: Spacing.lg, bottom: 20 },
-  titlePill: {
-    position: 'absolute',
-    bottom: 14,
-    alignSelf: 'center',
-    minWidth: 132,
-    minHeight: 38,
-    borderRadius: Radius.full,
-    backgroundColor: '#334B5B',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: Spacing.md,
-  },
+  titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: Spacing.lg },
+  backButton: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   titleText: { color: Colors.text.primary, fontSize: FontSize.lg, fontWeight: '900' },
   content: { paddingHorizontal: Spacing.lg, paddingBottom: 36 },
   productCard: {
     minHeight: 90,
     borderRadius: Radius.md,
-    backgroundColor: 'rgba(86, 113, 143, 0.72)',
+    backgroundColor: Colors.bg.card,
     padding: Spacing.sm,
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.md,
     marginBottom: Spacing.lg,
   },
-  productImage: { width: 72, height: 72, borderRadius: Radius.sm, backgroundColor: '#A8DDFF' },
+  productImage: { width: 72, height: 72, borderRadius: Radius.sm, backgroundColor: '#EDF4FD' },
   productInfo: { flex: 1 },
   productName: { color: Colors.text.primary, fontSize: FontSize.base, fontWeight: '900' },
   productMeta: { color: Colors.text.secondary, fontSize: FontSize.xs, marginTop: 3 },
   productPrice: { color: '#C8E7FF', fontSize: FontSize.md, fontWeight: '900', marginTop: 4 },
   formCard: {
     borderRadius: Radius.md,
-    backgroundColor: 'rgba(86, 113, 143, 0.72)',
+    backgroundColor: Colors.bg.card,
     padding: Spacing.lg,
     alignItems: 'center',
   },
@@ -652,7 +642,8 @@ const styles = StyleSheet.create({
     borderRadius: Radius.sm,
     borderWidth: 1,
     borderStyle: 'dashed',
-    borderColor: 'rgba(255,255,255,0.72)',
+    borderColor: Colors.border.default,
+    backgroundColor: Colors.bg.input,
     color: Colors.text.primary,
     padding: Spacing.md,
     fontSize: FontSize.sm,
@@ -671,7 +662,7 @@ const styles = StyleSheet.create({
     height: 32,
     borderRadius: Radius.full,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.72)',
+    borderColor: Colors.border.active,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -680,14 +671,14 @@ const styles = StyleSheet.create({
   uploadText: { color: Colors.text.primary, fontSize: FontSize.xs, fontWeight: '900' },
   photoPreviewWrap: { width: 86, height: 86, marginBottom: Spacing.sm },
   photoPreview: { width: '100%', height: '100%', borderRadius: Radius.sm },
-  removePhoto: { position: 'absolute', top: -8, right: -8, width: 24, height: 24, borderRadius: 12, backgroundColor: '#0B809A', alignItems: 'center', justifyContent: 'center' },
+  removePhoto: { position: 'absolute', top: -8, right: -8, width: 24, height: 24, borderRadius: 12, backgroundColor: Colors.brand.blue, alignItems: 'center', justifyContent: 'center' },
   formNote: { color: Colors.status.warning, fontSize: FontSize.xs, textAlign: 'center', marginTop: Spacing.md },
   submitButton: {
     alignSelf: 'center',
     minWidth: 160,
     height: 46,
     borderRadius: Radius.full,
-    backgroundColor: '#334B5B',
+    backgroundColor: Colors.brand.blue,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: Spacing.xl,
@@ -699,7 +690,7 @@ const styles = StyleSheet.create({
     borderRadius: Radius.md,
     borderWidth: 1,
     borderColor: Colors.border.default,
-    backgroundColor: 'rgba(4, 8, 18, 0.65)',
+    backgroundColor: Colors.bg.card,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -734,7 +725,7 @@ const styles = StyleSheet.create({
   },
   filterPanel: {
     borderRadius: Radius.md,
-    backgroundColor: 'rgba(86, 113, 143, 0.72)',
+    backgroundColor: Colors.bg.card,
     padding: Spacing.md,
     marginBottom: Spacing.lg,
   },
@@ -758,7 +749,7 @@ const styles = StyleSheet.create({
     borderRadius: Radius.md,
     borderWidth: 1,
     borderColor: Colors.border.default,
-    backgroundColor: 'rgba(4, 8, 18, 0.65)',
+    backgroundColor: Colors.bg.input,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -775,12 +766,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: Spacing.xs,
   },
-  sortChipActive: { backgroundColor: '#1388A6' },
+  sortChipActive: { backgroundColor: Colors.brand.blue },
   sortText: { color: Colors.text.secondary, fontSize: FontSize.xs, fontWeight: '800' },
   sortTextActive: { color: Colors.white },
   reviewCard: {
     borderRadius: Radius.md,
-    backgroundColor: 'rgba(86, 113, 143, 0.72)',
+    backgroundColor: Colors.bg.card,
     padding: Spacing.md,
     marginBottom: Spacing.md,
   },
@@ -789,24 +780,24 @@ const styles = StyleSheet.create({
   avatarImage: { width: 32, height: 32 },
   reviewAuthor: { flex: 1 },
   authorName: { color: Colors.text.primary, fontSize: FontSize.sm, fontWeight: '900' },
-  reviewDate: { color: '#A8F2FF', fontSize: 10, fontWeight: '800' },
+  reviewDate: { color: '#19626f', fontSize: 10, fontWeight: '800' },
   smallStars: { flexDirection: 'row', gap: 1 },
   reviewProduct: { color: Colors.text.primary, fontSize: FontSize.xs, fontWeight: '900', marginTop: Spacing.sm },
   reviewBody: { color: Colors.text.primary, fontSize: FontSize.xs, lineHeight: 17, marginTop: Spacing.xs },
   reviewPhotos: { gap: Spacing.sm, paddingTop: Spacing.sm },
-  reviewPhoto: { width: 58, height: 58, borderRadius: Radius.sm, backgroundColor: '#A8DDFF' },
+  reviewPhoto: { width: 58, height: 58, borderRadius: Radius.sm, backgroundColor: '#EDF4FD' },
   reviewLine: { height: 1, backgroundColor: 'rgba(255,255,255,0.24)', marginVertical: Spacing.sm },
   actionRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
   actionChip: {
     minHeight: 28,
     borderRadius: Radius.full,
-    backgroundColor: 'rgba(49, 81, 105, 0.9)',
+    backgroundColor: 'rgba(166, 197, 221, 0.9)',
     paddingHorizontal: Spacing.sm,
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.xs,
   },
-  actionChipActive: { backgroundColor: '#1388A6' },
+  actionChipActive: { backgroundColor: Colors.brand.blue },
   actionText: { color: Colors.text.primary, fontSize: 10, fontWeight: '900' },
   replyPreview: {
     borderTopWidth: 1,
@@ -834,7 +825,7 @@ const styles = StyleSheet.create({
   },
   detailReply: {
     borderRadius: Radius.md,
-    backgroundColor: 'rgba(86, 113, 143, 0.58)',
+    backgroundColor: '#EAF4FF',
     padding: Spacing.md,
     flexDirection: 'row',
     gap: Spacing.sm,
@@ -880,12 +871,12 @@ const styles = StyleSheet.create({
     flex: 1,
     minHeight: 38,
     borderRadius: Radius.full,
-    backgroundColor: 'rgba(4, 8, 18, 0.45)',
+    backgroundColor: Colors.bg.input,
     color: Colors.text.primary,
     paddingHorizontal: Spacing.md,
     fontSize: FontSize.xs,
   },
-  replyButton: { width: 38, height: 38, borderRadius: 19, backgroundColor: '#1388A6', alignItems: 'center', justifyContent: 'center' },
+  replyButton: { width: 38, height: 38, borderRadius: 19, backgroundColor: Colors.brand.blue, alignItems: 'center', justifyContent: 'center' },
   error: { color: Colors.status.error, textAlign: 'center', marginBottom: Spacing.md },
   empty: { alignItems: 'center', justifyContent: 'center', paddingVertical: 80 },
   emptyTitle: { color: Colors.text.primary, fontSize: FontSize.base, fontWeight: '900', marginTop: Spacing.sm },

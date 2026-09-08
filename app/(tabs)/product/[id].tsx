@@ -79,7 +79,7 @@ function shortPeso(value: number) {
 
 export default function ProductOverviewScreen() {
   const router = useRouter();
-  const { id, from } = useLocalSearchParams<{ id: string; from?: string }>();
+  const { id, from, orderId } = useLocalSearchParams<{ id: string; from?: string; orderId?: string }>();
   const { openNav } = useNav();
   const { user, token } = useAuthStore();
 
@@ -233,6 +233,14 @@ export default function ProductOverviewScreen() {
       router.replace({ pathname: '/(tabs)/profile', params: { tab: 'Saved' } });
       return;
     }
+    if (source === 'cart') {
+      router.replace('/(tabs)/cart');
+      return;
+    }
+    if (source === 'orders') {
+      router.replace({ pathname: '/(tabs)/orders', params: { orderId: Array.isArray(orderId) ? orderId[0] : orderId } });
+      return;
+    }
 
     router.back();
   };
@@ -258,9 +266,7 @@ export default function ProductOverviewScreen() {
         </TouchableOpacity>
 
         <View style={styles.brandLockup}>
-          <View style={styles.logoMark}>
-            <Text style={styles.logoText}>A</Text>
-          </View>
+          <Image source={require('@/assets/afro-logo-black.png')} style={styles.headerLogo} resizeMode="contain" />
           <Text style={styles.brand}>A'FRO</Text>
         </View>
 
@@ -270,7 +276,7 @@ export default function ProductOverviewScreen() {
           activeOpacity={0.75}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
-          <Ionicons name="menu-outline" size={30} color={Colors.brand.blueLight} />
+          <Ionicons name="menu-outline" size={28} color={Colors.brand.blue} />
         </TouchableOpacity>
       </View>
 
@@ -540,19 +546,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: Spacing.sm,
   },
-  logoMark: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: '#E8F4FF',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  logoText: {
-    color: Colors.bg.primary,
-    fontWeight: '900',
-    fontSize: FontSize.base,
-  },
+  headerLogo: { width: 30, height: 30 },
   brand: {
     color: Colors.text.primary,
     fontSize: FontSize.lg,
@@ -567,9 +561,9 @@ const styles = StyleSheet.create({
     aspectRatio: 1,
     borderRadius: Radius.md,
     overflow: 'hidden',
-    backgroundColor: '#A8DDFF',
-    borderWidth: 2,
-    borderColor: '#E8F4FF',
+    backgroundColor: '#EDF4FD',
+    borderWidth: 1,
+    borderColor: Colors.border.default,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -640,7 +634,7 @@ const styles = StyleSheet.create({
     marginTop: Spacing.md,
   },
   price: {
-    color: '#C8E7FF',
+    color: Colors.text.primary,
     fontSize: FontSize.xl,
     fontWeight: '900',
   },
@@ -716,8 +710,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   sizeChipActive: {
-    backgroundColor: '#0B809A',
-    borderColor: '#30B9D3',
+    backgroundColor: Colors.brand.blue,
+    borderColor: Colors.brand.blue,
   },
   sizeChipDisabled: {
     opacity: 0.42,
@@ -780,7 +774,7 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
     padding: Spacing.md,
     paddingBottom: Spacing.lg,
-    backgroundColor: 'rgba(10, 14, 26, 0.96)',
+    backgroundColor: '#FFFFFF',
     borderTopWidth: 1,
     borderTopColor: Colors.border.default,
   },
@@ -801,7 +795,7 @@ const styles = StyleSheet.create({
     borderRadius: Radius.md,
     borderWidth: 1,
     borderColor: Colors.border.active,
-    backgroundColor: 'rgba(96, 165, 250, 0.12)',
+    backgroundColor: '#EAF4FF',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -816,7 +810,7 @@ const styles = StyleSheet.create({
     flex: 1,
     height: 50,
     borderRadius: Radius.md,
-    backgroundColor: '#0B809A',
+    backgroundColor: Colors.brand.blue,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -843,7 +837,7 @@ const styles = StyleSheet.create({
     borderRadius: Radius.lg,
     borderWidth: 1,
     borderColor: Colors.border.active,
-    backgroundColor: 'rgba(25, 39, 58, 0.98)',
+    backgroundColor: Colors.bg.secondary,
     padding: Spacing.lg,
     alignItems: 'center',
   },
@@ -851,7 +845,7 @@ const styles = StyleSheet.create({
     width: 66,
     height: 66,
     borderRadius: 33,
-    backgroundColor: '#0B809A',
+    backgroundColor: Colors.brand.blue,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: Spacing.md,
@@ -873,7 +867,7 @@ const styles = StyleSheet.create({
     width: '100%',
     height: 48,
     borderRadius: Radius.md,
-    backgroundColor: '#0B809A',
+    backgroundColor: Colors.brand.blue,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',

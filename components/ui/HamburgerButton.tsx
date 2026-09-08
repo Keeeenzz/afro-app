@@ -15,15 +15,15 @@ export function HamburgerButton({ onPress }: HamburgerButtonProps) {
       hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
       activeOpacity={0.7}
     >
-      <Ionicons name="menu-outline" size={28} color={Colors.brand.blueLight} />
+      <Ionicons name="menu-outline" size={28} color={Colors.brand.blue} />
     </TouchableOpacity>
   );
 }
 
 const styles = StyleSheet.create({
   btn: {
-    width: 40,
-    height: 40,
+    width: 44,
+    height: 44,
     alignItems: 'center',
     justifyContent: 'center',
   },

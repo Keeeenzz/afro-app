@@ -49,7 +49,7 @@ function peso(value: number) {
 
 function formatDate(value?: string | null) {
   if (!value) return 'Pending';
-  return new Intl.DateTimeFormat('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(value));
+  return new Intl.DateTimeFormat('en-PH', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'Asia/Manila' }).format(new Date(value));
 }
 
 function normalizeStatus(status: string): Filter {
@@ -155,7 +155,7 @@ export default function OrdersScreen() {
   };
 
   const openProductOverview = (order: OrderItem) => {
-    router.push({ pathname: '/(tabs)/product/[id]', params: { id: order.productId, from: 'orders' } });
+    router.push({ pathname: '/(tabs)/product/[id]', params: { id: order.productId, from: 'orders', orderId: order.orderId } });
   };
 
   const startMessage = async (order: OrderItem) => {
@@ -196,7 +196,7 @@ export default function OrdersScreen() {
   }
 
   return (
-    <ImageBackground source={require('@/assets/splash-icon.png')} style={styles.screen} imageStyle={styles.bgImage}>
+    <ImageBackground source={require('@/assets/afro-logo-black.png')} style={styles.screen} imageStyle={styles.bgImage}>
       <View style={styles.overlay}>
         <Header onMenu={openNav} />
 
@@ -204,9 +204,7 @@ export default function OrdersScreen() {
           <TouchableOpacity onPress={() => (selectedOrderId ? setSelectedOrderId(null) : router.back())}>
             <Ionicons name="arrow-back" size={25} color={Colors.text.primary} />
           </TouchableOpacity>
-          <View style={styles.titlePill}>
-            <Text style={styles.titleText}>{selectedOrderId ? 'Track Order' : 'My Orders'}</Text>
-          </View>
+          <Text style={styles.titleText}>{selectedOrderId ? 'Track Order' : 'My Orders'}</Text>
           <View style={{ width: 25 }} />
         </View>
 
@@ -336,17 +334,29 @@ export default function OrdersScreen() {
               </View>
               {selectedItem ? (
                 <TouchableOpacity style={styles.viewProductButton} onPress={() => openProductOverview(selectedItem)} activeOpacity={0.82}>
-                  <Ionicons name="eye-outline" size={15} color={Colors.text.primary} />
+                  <Ionicons name="eye-outline" size={15} color= '#FFF' />
                 </TouchableOpacity>
               ) : null}
             </View>
 
             <View style={styles.detailCard}>
               <Text style={styles.sectionTitle}>Order Details</Text>
-              <DetailRow label="Expected Delivery Date" value={formatDate(selectedHead.expectedDeliveryAt)} />
-              <DetailRow label="Tracking ID" value={selectedHead.trackingNumber || selectedHead.orderId.slice(0, 13).toUpperCase()} />
-              <DetailRow label="Payment" value={selectedHead.paymentMethod || 'GCash'} />
-              <DetailRow label="Ship To" value={selectedHead.shippingAddress || 'Saved customer address'} />
+              <View style={styles.detailGrid}>
+                {[
+                  { icon: 'calendar-outline' as const, label: 'Delivery', value: formatDate(selectedHead.expectedDeliveryAt) },
+                  { icon: 'git-branch-outline' as const, label: 'Tracking ID', value: selectedHead.trackingNumber || selectedHead.orderId.slice(0, 13).toUpperCase() },
+                  { icon: 'card-outline' as const, label: 'Payment', value: selectedHead.paymentMethod || 'GCash' },
+                  { icon: 'location-outline' as const, label: 'Ship To', value: selectedHead.shippingAddress || 'Saved customer address' },
+                ].map((detail) => (
+                  <View key={detail.label} style={styles.detailCell}>
+                    <View style={styles.detailIcon}><Ionicons name={detail.icon} size={16} color={Colors.brand.blue} /></View>
+                    <View style={styles.detailCopy}>
+                      <Text style={styles.detailLabel}>{detail.label}</Text>
+                      <Text style={styles.detailValue} numberOfLines={2}>{detail.value}</Text>
+                    </View>
+                  </View>
+                ))}
+              </View>
             </View>
 
             <View style={styles.statusCard}>
@@ -407,7 +417,7 @@ export default function OrdersScreen() {
                       <ActivityIndicator color={Colors.text.primary} size="small" />
                     ) : (
                       <>
-                        <Ionicons name="chatbubble-ellipses-outline" size={14} color={Colors.text.primary} />
+                        <Ionicons name="chatbubble-ellipses-outline" size={14} color= '#fff' />
                         <Text style={styles.messageButtonText}>Message</Text>
                       </>
                     )}
@@ -426,29 +436,20 @@ function Header({ onMenu }: { onMenu: () => void }) {
   return (
     <View style={styles.header}>
       <View style={styles.brandLockup}>
-        <Image source={require('@/assets/afro-logo.png')} style={styles.logo} resizeMode="contain" />
+        <Image source={require('@/assets/afro-logo-black.png')} style={styles.logo} resizeMode="contain" />
         <Text style={styles.brand}>A'FRO</Text>
       </View>
       <TouchableOpacity onPress={onMenu} style={styles.headerIcon}>
-        <Ionicons name="menu-outline" size={30} color={Colors.brand.blueLight} />
+        <Ionicons name="menu-outline" size={28} color={Colors.brand.blue} />
       </TouchableOpacity>
-    </View>
-  );
-}
-
-function DetailRow({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={styles.detailRow}>
-      <Text style={styles.detailLabel}>{label}</Text>
-      <Text style={styles.detailValue}>{value}</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Colors.bg.primary },
-  bgImage: { opacity: 0.1, resizeMode: 'cover' },
-  overlay: { flex: 1, backgroundColor: 'rgba(10, 14, 26, 0.9)' },
+  bgImage: { opacity: 0.025, resizeMode: 'center' },
+  overlay: { flex: 1, backgroundColor: 'rgba(244, 247, 253, 0.96)' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.bg.primary },
   header: {
     paddingHorizontal: Spacing.md,
@@ -470,16 +471,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  titlePill: {
-    minWidth: 116,
-    height: 38,
-    paddingHorizontal: Spacing.lg,
-    borderRadius: Radius.full,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#334B5B',
-  },
-  titleText: { color: Colors.text.primary, fontSize: FontSize.base, fontWeight: '900' },
+  titleText: { color: Colors.text.primary, fontSize: FontSize.lg, fontWeight: '900' },
   content: { paddingHorizontal: Spacing.lg, paddingBottom: 38, gap: Spacing.md },
   filterRow: { flexDirection: 'row', justifyContent: 'space-between', gap: Spacing.sm },
   filterButton: {
@@ -488,9 +480,9 @@ const styles = StyleSheet.create({
     borderRadius: Radius.full,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(74, 101, 132, 0.7)',
+    backgroundColor: Colors.bg.card,
   },
-  filterButtonActive: { backgroundColor: '#1388A6' },
+  filterButtonActive: { backgroundColor: Colors.brand.blue },
   filterText: { color: Colors.text.primary, fontSize: 10, fontWeight: '900' },
   filterTextActive: { color: Colors.white },
   orderCard: {
@@ -499,11 +491,11 @@ const styles = StyleSheet.create({
     padding: Spacing.sm,
     flexDirection: 'row',
     gap: Spacing.sm,
-    backgroundColor: 'rgba(86, 113, 143, 0.7)',
+    backgroundColor: Colors.bg.card,
     borderWidth: 1,
-    borderColor: 'rgba(221, 241, 255, 0.14)',
+    borderColor: Colors.border.default,
   },
-  orderImage: { width: 72, height: 72, borderRadius: Radius.sm, backgroundColor: '#A8DDFF' },
+  orderImage: { width: 72, height: 72, borderRadius: Radius.sm, backgroundColor: '#EDF4FD' },
   orderInfo: { flex: 1, justifyContent: 'center' },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
   orderName: { flex: 1, color: Colors.text.primary, fontSize: FontSize.base, fontWeight: '900' },
@@ -511,15 +503,15 @@ const styles = StyleSheet.create({
     minWidth: 24,
     paddingHorizontal: 5,
     borderRadius: Radius.full,
-    color: Colors.text.primary,
+    color: Colors.white,
     fontSize: 9,
     fontWeight: '900',
     textAlign: 'center',
-    backgroundColor: '#315169',
+    backgroundColor: Colors.brand.blue,
   },
-  orderMeta: { color: '#D2E3F5', fontSize: FontSize.xs, marginTop: 2 },
+  orderMeta: { color: Colors.text.secondary, fontSize: FontSize.xs, marginTop: 2 },
   orderPrice: { color: Colors.text.primary, fontSize: FontSize.xs, fontWeight: '900', marginTop: 2 },
-  orderStatusLine: { color: '#52F2CA', fontSize: 10, fontWeight: '900', marginTop: 3 },
+  orderStatusLine: { color: Colors.status.success, fontSize: 10, fontWeight: '900', marginTop: 3 },
   cancelledText: { color: Colors.status.error },
   orderActionWrap: { justifyContent: 'flex-end', paddingBottom: 3 },
   miniButton: {
@@ -528,27 +520,27 @@ const styles = StyleSheet.create({
     borderRadius: Radius.sm,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#5B6E82',
+    backgroundColor: Colors.brand.blue,
   },
   miniButtonMuted: { backgroundColor: '#758396' },
-  miniButtonText: { color: Colors.text.primary, fontSize: 9, fontWeight: '900' },
+  miniButtonText: { color: Colors.white, fontSize: 9, fontWeight: '900' },
   trackProductCard: {
     borderTopLeftRadius: Radius.md,
     borderTopRightRadius: Radius.md,
     padding: Spacing.sm,
     flexDirection: 'row',
     gap: Spacing.sm,
-    backgroundColor: 'rgba(86, 113, 143, 0.7)',
+    backgroundColor: Colors.bg.card,
     borderWidth: 1,
-    borderColor: 'rgba(221, 241, 255, 0.14)',
+    borderColor: Colors.border.default,
   },
-  trackImage: { width: 82, height: 82, borderRadius: Radius.sm, backgroundColor: '#A8DDFF' },
+  trackImage: { width: 82, height: 82, borderRadius: Radius.sm, backgroundColor: '#EDF4FD' },
   trackProductInfo: { flex: 1, justifyContent: 'center' },
-  trackPrice: { color: '#C8E7FF', fontSize: FontSize.base, fontWeight: '900', marginTop: Spacing.xs },
+  trackPrice: { color: Colors.text.primary, fontSize: FontSize.base, fontWeight: '900', marginTop: Spacing.xs },
   itemPickerCard: {
     borderRadius: Radius.md,
     padding: Spacing.md,
-    backgroundColor: 'rgba(86, 113, 143, 0.7)',
+    backgroundColor: Colors.bg.card,
     borderWidth: 1,
     borderColor: 'rgba(221, 241, 255, 0.14)',
   },
@@ -558,7 +550,7 @@ const styles = StyleSheet.create({
     borderRadius: Radius.sm,
     borderWidth: 1,
     borderColor: '#8FA9C8',
-    backgroundColor: 'rgba(4, 8, 18, 0.45)',
+    backgroundColor: Colors.bg.input,
     paddingHorizontal: Spacing.md,
     flexDirection: 'row',
     alignItems: 'center',
@@ -577,18 +569,18 @@ const styles = StyleSheet.create({
     minHeight: 52,
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
-    backgroundColor: 'rgba(18, 29, 50, 0.82)',
+    backgroundColor: Colors.bg.card,
     borderTopWidth: 1,
     borderTopColor: 'rgba(255,255,255,0.09)',
   },
-  pickerOptionActive: { backgroundColor: '#1388A6' },
+  pickerOptionActive: { backgroundColor: '#EAF4FF' },
   pickerOptionTitle: { color: Colors.text.primary, fontSize: FontSize.sm, fontWeight: '900' },
   pickerOptionMeta: { color: '#D2E3F5', fontSize: FontSize.xs, marginTop: 2 },
   viewProductButton: {
     width: 34,
     height: 34,
     borderRadius: Radius.sm,
-    backgroundColor: '#1388A6',
+    backgroundColor: Colors.brand.blue,
     alignItems: 'center',
     justifyContent: 'center',
     alignSelf: 'center',
@@ -598,26 +590,29 @@ const styles = StyleSheet.create({
     borderBottomLeftRadius: Radius.md,
     borderBottomRightRadius: Radius.md,
     padding: Spacing.md,
-    backgroundColor: 'rgba(86, 113, 143, 0.7)',
+    backgroundColor: Colors.bg.card,
     borderWidth: 1,
     borderTopWidth: 0,
     borderColor: 'rgba(221, 241, 255, 0.14)',
   },
   sectionTitle: { color: Colors.text.primary, fontSize: FontSize.base, fontWeight: '900', marginBottom: Spacing.sm },
-  detailRow: { flexDirection: 'row', justifyContent: 'space-between', gap: Spacing.md, marginTop: Spacing.xs },
-  detailLabel: { flex: 1, color: Colors.text.primary, fontSize: 10, fontWeight: '700' },
-  detailValue: { flex: 1, color: Colors.text.primary, fontSize: 10, fontWeight: '900', textAlign: 'right' },
+  detailGrid: { flexDirection: 'row', flexWrap: 'wrap', rowGap: Spacing.md },
+  detailCell: { width: '50%', flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.sm, paddingRight: Spacing.sm },
+  detailIcon: { width: 30, height: 30, borderRadius: 8, backgroundColor: '#EAF4FF', alignItems: 'center', justifyContent: 'center' },
+  detailCopy: { flex: 1 },
+  detailLabel: { color: Colors.text.muted, fontSize: 9, fontWeight: '800', textTransform: 'uppercase' },
+  detailValue: { color: Colors.text.primary, fontSize: 11, fontWeight: '900', marginTop: 2 },
   statusCard: {
     borderRadius: Radius.md,
     padding: Spacing.lg,
-    backgroundColor: 'rgba(86, 113, 143, 0.7)',
+    backgroundColor: Colors.bg.card,
     borderWidth: 1,
     borderColor: 'rgba(221, 241, 255, 0.14)',
   },
   itemsCard: {
     borderRadius: Radius.md,
     padding: Spacing.md,
-    backgroundColor: 'rgba(86, 113, 143, 0.7)',
+    backgroundColor: Colors.bg.card,
     borderWidth: 1,
     borderColor: 'rgba(221, 241, 255, 0.14)',
   },
@@ -627,24 +622,26 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: Spacing.sm,
     paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.sm, 
     borderTopWidth: 1,
+    borderRadius: Radius.sm,
     borderTopColor: 'rgba(255,255,255,0.13)',
   },
-  orderedItemRowActive: { backgroundColor: 'rgba(19, 136, 166, 0.18)' },
-  orderedItemImage: { width: 54, height: 54, borderRadius: Radius.sm, backgroundColor: '#A8DDFF' },
+  orderedItemRowActive: { backgroundColor: '#EAF4FF' },
+  orderedItemImage: { width: 54, height: 54, borderRadius: Radius.sm, backgroundColor: '#EDF4FD' },
   orderedItemInfo: { flex: 1 },
   messageButton: {
     minWidth: 76,
     height: 30,
     borderRadius: Radius.sm,
-    backgroundColor: '#1388A6',
+    backgroundColor: Colors.brand.blue,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 4,
     paddingHorizontal: Spacing.sm,
   },
-  messageButtonText: { color: Colors.text.primary, fontSize: 9, fontWeight: '900' },
+  messageButtonText: { color: Colors.white, fontSize: 9, fontWeight: '900' },
   statusTitle: { color: Colors.text.primary, fontSize: FontSize.base, fontWeight: '900', textAlign: 'center', marginBottom: Spacing.lg },
   timelineRow: { minHeight: 74, flexDirection: 'row', position: 'relative' },
   timelineDot: {
@@ -653,19 +650,19 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#43546C',
+    backgroundColor: '#D9E6F5',
     zIndex: 2,
   },
-  timelineDotComplete: { backgroundColor: '#E8F4FF' },
+  timelineDotComplete: { backgroundColor: Colors.brand.blue },
   timelineLine: {
     position: 'absolute',
     left: 13,
     top: 27,
     bottom: -1,
     width: 2,
-    backgroundColor: '#43546C',
+    backgroundColor: '#D9E6F5',
   },
-  timelineLineComplete: { backgroundColor: '#E8F4FF' },
+  timelineLineComplete: { backgroundColor: Colors.brand.blue },
   timelineTextWrap: { flex: 1, marginLeft: Spacing.md, paddingBottom: Spacing.sm },
   timelineHint: { color: Colors.text.primary, fontSize: 9 },
   timelineLabel: { color: Colors.text.primary, fontSize: FontSize.sm, fontWeight: '900', marginTop: 2 },
