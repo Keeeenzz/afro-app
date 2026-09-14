@@ -37,6 +37,12 @@ export default function EmailPage() {
   const [expired, setExpired] = useState(false);
   const [resendUntil, setResendUntil] = useState(0);
 
+  const postWithTimeout = <T,>(path: string, body: unknown) => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15_000);
+    return apiPost<T>(path, body, undefined, controller.signal).finally(() => clearTimeout(timeout));
+  };
+
   useEffect(() => {
     if (!otpSent || verified || expired) return;
     if (secondsLeft <= 0) {
@@ -81,7 +87,7 @@ export default function EmailPage() {
     if (!validateEmail()) return;
     setLoading(true);
     try {
-      const result = await apiPost<{ resendAfterSeconds?: number }>('/auth/email-otp/send', { email: email.trim() });
+      const result = await postWithTimeout<{ resendAfterSeconds?: number }>('/auth/email-otp/send', { email: email.trim() });
       setOtpSent(true);
       setOtp('');
       setOtpError('');
@@ -89,7 +95,7 @@ export default function EmailPage() {
       setSecondsLeft(OTP_EXPIRY);
       setResendUntil(Number(result.resendAfterSeconds ?? 60));
     } catch (error) {
-      setEmailError(error instanceof Error ? error.message : 'Failed to send code. Try again.');
+      setEmailError(error instanceof Error && error.name === 'AbortError' ? 'Email request timed out. Check your connection and try again.' : error instanceof Error ? error.message : 'Failed to send code. Try again.');
     } finally {
       setLoading(false);
     }
@@ -106,11 +112,11 @@ export default function EmailPage() {
     }
     setLoading(true);
     try {
-      const result = await apiPost<{ verificationId: string }>('/auth/email-otp/verify', { email: email.trim(), code: otp });
+      const result = await postWithTimeout<{ verificationId: string }>('/auth/email-otp/verify', { email: email.trim(), code: otp });
       setVerified(true);
       setDraft({ email: email.trim(), email_verification_id: result.verificationId });
     } catch (error) {
-      setOtpError(error instanceof Error ? error.message : 'Invalid code. Please try again.');
+      setOtpError(error instanceof Error && error.name === 'AbortError' ? 'Verification timed out. Check your connection and try again.' : error instanceof Error ? error.message : 'Invalid code. Please try again.');
     } finally {
       setLoading(false);
     }

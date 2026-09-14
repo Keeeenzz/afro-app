@@ -13,6 +13,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '@/hooks/useAuthStore';
 import { Colors, FontSize, Spacing } from '@/constants/theme';
+import { useTranslation } from '@/lib/i18n';
 
 const { width } = Dimensions.get('window');
 const NAV_WIDTH = width * 0.75;
@@ -36,6 +37,7 @@ const NAV_ITEMS = [
 export function SideNav({ visible, onClose }: SideNavProps) {
   const router = useRouter();
   const { user, logout } = useAuthStore();
+  const { t } = useTranslation();
   const slideAnim = useRef(new Animated.Value(NAV_WIDTH)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
@@ -82,8 +84,10 @@ export function SideNav({ visible, onClose }: SideNavProps) {
     setTimeout(() => router.replace('/(auth)'), 250);
   };
 
-  const idNumber = user?.id_number ?? user?.idNumber;
-  const isVerified = !!idNumber?.trim();
+  // Account creation is gated by verified email and SMS. An optional government
+  // ID is not the source of account-verification status (the Profile screen
+  // uses the same rule).
+  const isVerified = Boolean(user?.user_id);
 
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
@@ -122,7 +126,7 @@ export function SideNav({ visible, onClose }: SideNavProps) {
               {user?.full_name ?? 'Guest'}
             </Text>
             <Text style={[styles.userStatus, isVerified && styles.userStatusVerified]}>
-              {isVerified ? 'Account Verified' : 'Account Unverified'}
+              {t(isVerified ? 'Account Verified' : 'Account Unverified')}
             </Text>
          </View>
         </TouchableOpacity>
@@ -140,7 +144,7 @@ export function SideNav({ visible, onClose }: SideNavProps) {
               activeOpacity={0.7}
             >
               <Ionicons name={item.icon} size={22} color={Colors.text.secondary} />
-              <Text style={styles.navLabel}>{item.label}</Text>
+              <Text style={styles.navLabel}>{t(item.label)}</Text>
             </TouchableOpacity>
           ))}
         </View>
@@ -148,7 +152,7 @@ export function SideNav({ visible, onClose }: SideNavProps) {
         {/* Log out */}
         <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout} activeOpacity={0.7}>
           <Ionicons name="log-out-outline" size={22} color={Colors.status.error} />
-          <Text style={styles.logoutLabel}>Log Out</Text>
+          <Text style={styles.logoutLabel}>{t('Log Out')}</Text>
         </TouchableOpacity>
       </Animated.View>
     </View>

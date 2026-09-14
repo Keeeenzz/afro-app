@@ -178,61 +178,12 @@ export function InfoTab() {
             }}
             keyboardType="phone-pad"
           />
-          <Input
-            label="House Number / Unit"
-            value={houseNo}
-            onChangeText={(value) => {
-              setHouseNo(value);
-              setError('');
-            }}
-            autoCapitalize="words"
-          />
-          <Input
-            label="Street Name"
-            value={street}
-            onChangeText={(value) => {
-              setStreet(value);
-              setError('');
-            }}
-            autoCapitalize="words"
-          />
-          <Input
-            label="Barangay / Municipality"
-            value={barangay}
-            onChangeText={(value) => {
-              setBarangay(value);
-              setError('');
-            }}
-            autoCapitalize="words"
-          />
-          <Input
-            label="City"
-            value={city}
-            onChangeText={(value) => {
-              setCity(value);
-              setError('');
-            }}
-            autoCapitalize="words"
-          />
-          <Input
-            label="Province"
-            value={province}
-            onChangeText={(value) => {
-              setProvince(value);
-              setError('');
-            }}
-            autoCapitalize="words"
-          />
-          <Input
-            label="Zip Code"
-            value={zip}
-            onChangeText={(value) => {
-              setZip(value);
-              setError('');
-            }}
-            keyboardType="number-pad"
-            autoCapitalize="words"
-          />
+          <Input label="Province" value={province} onChangeText={(value) => { setProvince(value); setError(''); }} autoCapitalize="words" />
+          <Input label="City" value={city} onChangeText={(value) => { setCity(value); setError(''); }} autoCapitalize="words" />
+          <Input label="Barangay / Municipality" value={barangay} onChangeText={(value) => { setBarangay(value); setError(''); }} autoCapitalize="words" />
+          <Input label="Zip Code" value={zip} onChangeText={(value) => { setZip(value); setError(''); }} keyboardType="number-pad" />
+          <Input label="Street Name" value={street} onChangeText={(value) => { setStreet(value); setError(''); }} autoCapitalize="words" />
+          <Input label="House Number / Unit" value={houseNo} onChangeText={(value) => { setHouseNo(value); setError(''); }} autoCapitalize="words" />
           {error ? <Text style={styles.error}>{error}</Text> : null}
           <View style={styles.editActions}>
             <Button

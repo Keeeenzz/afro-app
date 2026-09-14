@@ -16,7 +16,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { apiDelete, apiGet, apiPostForm, imageUrl } from '@/lib/api';
+import { apiDelete, apiGet, apiPost, apiPostForm, imageUrl } from '@/lib/api';
 import { Colors, FontSize, Radius, Spacing } from '@/constants/theme';
 import { useAuthStore, type AuthUser } from '@/hooks/useAuthStore';
 import { useNav } from '@/context/NavContext';
@@ -36,8 +36,18 @@ type CartItem = {
 
 type Step = 'cart' | 'checkout' | 'receipt' | 'confirmed';
 
-const SHIPPING_FEE = 20;
 const GCASH_NUMBER = '09568313505';
+
+type ShippingEvaluation = {
+  allowed: boolean;
+  code?: string;
+  message?: string;
+  totalWeightKg?: number;
+  totalBulkUnits?: number;
+  packageLabel?: string;
+  shippingFee?: number;
+  destinationProvince?: string;
+};
 
 function peso(value: number) {
   return `₱ ${Number(value ?? 0).toLocaleString('en-PH', { maximumFractionDigits: 0 })}`;
@@ -70,6 +80,11 @@ export default function CartScreen() {
   const [referenceNumber, setReferenceNumber] = useState('');
   const [receipt, setReceipt] = useState<ImagePicker.ImagePickerAsset | null>(null);
   const [createdOrderId, setCreatedOrderId] = useState('');
+  const [createdOrderItemCount, setCreatedOrderItemCount] = useState(0);
+  const [createdOrderTotal, setCreatedOrderTotal] = useState(0);
+  const [createdOrderImages, setCreatedOrderImages] = useState<string[]>([]);
+  const [shippingEvaluation, setShippingEvaluation] = useState<ShippingEvaluation | null>(null);
+  const [shippingLoading, setShippingLoading] = useState(false);
 
   const loadCart = useCallback(async () => {
     if (!user?.user_id) {
@@ -105,7 +120,7 @@ export default function CartScreen() {
     (sum, item) => sum + Number(item.unitPrice ?? 0) * Number(item.quantity ?? 1),
     0,
   );
-  const shipping = selectedItems.length ? SHIPPING_FEE : 0;
+  const shipping = shippingEvaluation?.allowed ? Number(shippingEvaluation.shippingFee ?? 0) : 0;
   const total = subtotal + shipping;
   const fullAddress = getAddress(user);
 
@@ -121,6 +136,7 @@ export default function CartScreen() {
   };
 
   const toggleItem = (id: string) => {
+    setShippingEvaluation(null);
     setSelectedIds((current) => {
       const next = new Set(current);
       if (next.has(id)) next.delete(id);
@@ -131,6 +147,7 @@ export default function CartScreen() {
 
   const removeItem = async (item: CartItem) => {
     if (!user?.user_id) return;
+    setShippingEvaluation(null);
     const previousItems = items;
     setItems((current) => current.filter((currentItem) => currentItem.cartItemId !== item.cartItemId));
     setSelectedIds((current) => {
@@ -149,6 +166,39 @@ export default function CartScreen() {
 
   const openProductOverview = (item: CartItem) => {
     router.push({ pathname: '/(tabs)/product/[id]', params: { id: item.productId, from: 'cart' } });
+  };
+
+  const evaluateShipping = async () => {
+    if (!user?.user_id || !selectedItems.length) {
+      Alert.alert('Choose items', 'Select at least one product to checkout.');
+      return false;
+    }
+
+    setShippingLoading(true);
+    setError('');
+    try {
+      const evaluation = await apiPost<ShippingEvaluation>('/cart/shipping/evaluate', {
+        userId: user.user_id,
+        selectedCartItemIds: selectedItems.map((item) => item.cartItemId),
+      }, token);
+      setShippingEvaluation(evaluation);
+      if (!evaluation.allowed) {
+        Alert.alert('Shipping unavailable', evaluation.message ?? 'The selected items cannot be shipped.');
+        return false;
+      }
+      return true;
+    } catch (shippingError) {
+      const message = shippingError instanceof Error ? shippingError.message : 'Could not calculate shipping. Please try again.';
+      setShippingEvaluation(null);
+      Alert.alert('Shipping unavailable', message);
+      return false;
+    } finally {
+      setShippingLoading(false);
+    }
+  };
+
+  const beginCheckout = async () => {
+    if (await evaluateShipping()) setStep('checkout');
   };
 
   const chooseReceipt = async () => {
@@ -186,7 +236,6 @@ export default function CartScreen() {
     const form = new FormData();
     form.append('userId', user.user_id);
     form.append('selectedCartItemIds', JSON.stringify(selectedItems.map((item) => item.cartItemId)));
-    form.append('shippingFee', String(SHIPPING_FEE));
     form.append('paymentMethod', 'GCash');
     form.append('referenceNumber', referenceNumber.trim());
     form.append('shippingAddress', fullAddress);
@@ -208,12 +257,16 @@ export default function CartScreen() {
     try {
       const order = await apiPostForm<{ orderId: string }>('/cart/checkout', form, token);
       setCreatedOrderId(order.orderId);
+      setCreatedOrderItemCount(selectedItems.length);
+      setCreatedOrderTotal(total);
+      setCreatedOrderImages(selectedItems.map((item) => item.imageUrl).filter((value): value is string => Boolean(value)).slice(0, 2));
       setStep('confirmed');
       setReferenceNumber('');
       setReceipt(null);
       await loadCart();
     } catch (err) {
-      Alert.alert('Could not place order', err instanceof Error ? err.message : 'Please try again.');
+      const message = err instanceof Error ? err.message : 'Please try again.';
+      Alert.alert('Could not place order', message);
     } finally {
       setPlacing(false);
     }
@@ -222,6 +275,9 @@ export default function CartScreen() {
   const leaveConfirmation = (route: '/(tabs)/orders' | '/(tabs)/catalog') => {
     setStep('cart');
     setCreatedOrderId('');
+    setCreatedOrderItemCount(0);
+    setCreatedOrderTotal(0);
+    setCreatedOrderImages([]);
     setReferenceNumber('');
     setReceipt(null);
     router.replace(route);
@@ -292,11 +348,11 @@ export default function CartScreen() {
 
             <SummaryCard subtotal={subtotal} shipping={0} total={subtotal} showShipping={false} itemCount={selectedItems.length} />
             <TouchableOpacity
-              style={[styles.primaryButton, !selectedItems.length && styles.disabled]}
-              disabled={!selectedItems.length}
-              onPress={() => setStep('checkout')}
+              style={[styles.primaryButton, (!selectedItems.length || shippingLoading) && styles.disabled]}
+              disabled={!selectedItems.length || shippingLoading}
+              onPress={beginCheckout}
             >
-              <Text style={styles.primaryText}>Checkout</Text>
+              <Text style={styles.primaryText}>{shippingLoading ? 'Calculating shipping…' : 'Checkout'}</Text>
             </TouchableOpacity>
           </ScrollView>
         )}
@@ -306,7 +362,7 @@ export default function CartScreen() {
             <ProgressBars active={1} />
             <AddressPanel user={user} address={fullAddress} />
             <PaymentPanel />
-            <SummaryCard subtotal={subtotal} shipping={SHIPPING_FEE} total={total} showShipping itemCount={selectedItems.length} />
+            <SummaryCard subtotal={subtotal} shipping={shipping} total={total} showShipping itemCount={selectedItems.length} />
             <TouchableOpacity style={styles.primaryButton} onPress={() => setStep('receipt')}>
               <Text style={styles.primaryText}>Continue</Text>
             </TouchableOpacity>
@@ -318,7 +374,7 @@ export default function CartScreen() {
             <ProgressBars active={2} />
             <AddressPanel user={user} address={fullAddress} />
             <PaymentPanel />
-            <SummaryCard subtotal={subtotal} shipping={SHIPPING_FEE} total={total} showShipping itemCount={selectedItems.length} />
+            <SummaryCard subtotal={subtotal} shipping={shipping} total={total} showShipping itemCount={selectedItems.length} />
             <Panel icon="receipt" title="Upload Receipt">
               <Image source={require('@/assets/gcash-qr.png')} style={styles.qrImage} resizeMode="contain" />
               <Text style={styles.gcashNumber}>GCash Number: {GCASH_NUMBER}</Text>
@@ -351,17 +407,38 @@ export default function CartScreen() {
         {step === 'confirmed' && (
           <View style={styles.confirmed}>
             <View style={styles.confirmIcon}>
-              <Ionicons name="checkmark" size={86} color="#DDF7FF" />
+              <Ionicons name="checkmark" size={52} color={Colors.white} />
             </View>
-            <Text style={styles.confirmText}>Order{'\n'}Confirmed</Text>
-            <Text style={styles.confirmSubtext}>
-              Order {createdOrderId.slice(0, 8).toUpperCase()} is now waiting for admin processing.
-            </Text>
-            <TouchableOpacity style={styles.primaryButton} onPress={() => leaveConfirmation('/(tabs)/orders')}>
+            <Text style={styles.confirmText}>Order confirmed</Text>
+            <Text style={styles.confirmSubtext}>We'll notify you once it's processed.</Text>
+            <View style={styles.confirmationCard}>
+              <View style={styles.confirmationRow}>
+                <Text style={styles.confirmationLabel}>Order number</Text>
+                <Text style={styles.confirmationValue}>{createdOrderId.slice(0, 8).toUpperCase()}</Text>
+              </View>
+              <View style={styles.confirmationRow}>
+                <Text style={styles.confirmationLabel}>Status</Text>
+                <View style={styles.statusPill}><Text style={styles.statusPillText}>Waiting for admin</Text></View>
+              </View>
+              <View style={styles.confirmationDivider} />
+              <View style={styles.confirmationItems}>
+                <View style={styles.itemPlaceholders}>
+                  {createdOrderImages.length ? createdOrderImages.map((source, index) => (
+                    <Image key={`${source}-${index}`} source={{ uri: imageUrl(source) ?? source }} style={styles.itemPlaceholder} />
+                  )) : <View style={styles.itemPlaceholder} />}
+                </View>
+                <View style={styles.confirmationItemText}>
+                  <Text style={styles.itemCount}>{createdOrderItemCount} {createdOrderItemCount === 1 ? 'item' : 'items'}</Text>
+                  <Text style={styles.itemCaption}>Your selected items</Text>
+                </View>
+                <Text style={styles.confirmationTotal}>₱{createdOrderTotal.toFixed(2)}</Text>
+              </View>
+            </View>
+            <TouchableOpacity style={[styles.primaryButton, styles.confirmationAction]} onPress={() => leaveConfirmation('/(tabs)/orders')}>
               <Text style={styles.primaryText}>Check Orders</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.secondaryButton} onPress={() => leaveConfirmation('/(tabs)/catalog')}>
-              <Text style={styles.primaryText}>Continue</Text>
+            <TouchableOpacity style={[styles.secondaryButton, styles.confirmationSecondaryAction]} onPress={() => leaveConfirmation('/(tabs)/catalog')}>
+              <Text style={styles.secondaryText}>Continue shopping</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -593,6 +670,9 @@ const styles = StyleSheet.create({
     marginTop: Spacing.sm,
   },
   primaryText: { color: Colors.white, fontSize: FontSize.sm, fontWeight: '900' },
+  secondaryText: { color: Colors.brand.blue, fontSize: FontSize.sm, fontWeight: '900' },
+  confirmationAction: { width: '100%', borderRadius: Radius.md, height: 48 },
+  confirmationSecondaryAction: { width: '100%', backgroundColor: 'transparent', borderColor: 'transparent', height: 44, marginTop: Spacing.xs },
   disabled: { opacity: 0.45 },
   progressRow: { flexDirection: 'row', alignSelf: 'center', gap: 2, width: 210, marginBottom: Spacing.sm },
   progressBar: { flex: 1, height: 5, backgroundColor: '#D9E6F5' },
@@ -648,17 +728,30 @@ const styles = StyleSheet.create({
   },
   confirmed: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: Spacing.xl },
   confirmIcon: {
-    width: 132,
-    height: 132,
-    borderRadius: 66,
+    width: 92,
+    height: 92,
+    borderRadius: 46,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#1682FF',
-    transform: [{ rotate: '-42deg' }],
-    marginBottom: Spacing.xl,
+    backgroundColor: Colors.brand.blue,
+    marginBottom: Spacing.lg,
   },
-  confirmText: { color: '#79E9FF', fontSize: 40, lineHeight: 47, fontWeight: '900', textAlign: 'center' },
-  confirmSubtext: { color: Colors.text.secondary, fontSize: FontSize.sm, textAlign: 'center', marginVertical: Spacing.lg },
+  confirmText: { color: Colors.text.primary, fontSize: 28, lineHeight: 34, fontWeight: '900', textAlign: 'center' },
+  confirmSubtext: { color: Colors.text.secondary, fontSize: FontSize.sm, textAlign: 'center', marginTop: Spacing.xs, marginBottom: Spacing.lg },
+  confirmationCard: { width: '100%', backgroundColor: Colors.white, borderRadius: Radius.lg, padding: Spacing.md, marginBottom: Spacing.lg, borderWidth: 1, borderColor: '#E2EAF4' },
+  confirmationRow: { minHeight: 30, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  confirmationLabel: { color: Colors.text.secondary, fontSize: FontSize.xs },
+  confirmationValue: { color: Colors.brand.blue, fontWeight: '800', fontSize: FontSize.sm },
+  statusPill: { backgroundColor: '#EAF2FC', paddingHorizontal: Spacing.sm, paddingVertical: 4, borderRadius: Radius.full },
+  statusPillText: { color: Colors.brand.blue, fontSize: FontSize.xs, fontWeight: '800' },
+  confirmationDivider: { height: 1, backgroundColor: '#E2EAF4', marginVertical: Spacing.sm },
+  confirmationItems: { flexDirection: 'row', alignItems: 'center' },
+  itemPlaceholders: { flexDirection: 'row', width: 68 },
+  itemPlaceholder: { width: 38, height: 38, borderRadius: Radius.sm, backgroundColor: '#E7EEF8', marginRight: -8, borderWidth: 1, borderColor: Colors.white },
+  confirmationItemText: { flex: 1, marginLeft: Spacing.sm },
+  itemCount: { color: Colors.text.primary, fontWeight: '800', fontSize: FontSize.sm },
+  itemCaption: { color: Colors.text.secondary, fontSize: FontSize.xs, marginTop: 2 },
+  confirmationTotal: { color: Colors.text.primary, fontWeight: '900', fontSize: FontSize.base },
   empty: { minHeight: 260, alignItems: 'center', justifyContent: 'center' },
   emptyTitle: { color: Colors.text.primary, fontSize: FontSize.base, fontWeight: '900', marginTop: Spacing.sm },
   emptyText: { color: Colors.text.secondary, fontSize: FontSize.sm, textAlign: 'center', marginTop: Spacing.xs },

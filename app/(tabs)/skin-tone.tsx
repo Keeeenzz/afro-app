@@ -16,6 +16,7 @@ import {
   View,
 } from 'react-native';
 import { Colors, FontSize, Radius, Spacing } from '@/constants/theme';
+import { useTranslation } from '@/lib/i18n';
 import {
   analyzeSkinTone,
   skinToneCatalogColorNames,
@@ -23,6 +24,7 @@ import {
 } from '@/lib/skinTone';
 
 export default function SkinToneScreen() {
+  const { t } = useTranslation();
   const router = useRouter();
   const [status, setStatus] = useState('Ready');
   const [result, setResult] = useState<SkinToneAnalysis | null>(null);
@@ -132,13 +134,13 @@ export default function SkinToneScreen() {
           <TouchableOpacity style={styles.backButton} onPress={() => router.back()} activeOpacity={0.75}>
             <Ionicons name="chevron-back" size={22} color={Colors.text.primary} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Skin Tone AI</Text>
+          <Text style={styles.headerTitle}>{t('Skin Tone AI')}</Text>
           <View style={styles.backButton} />
         </View>
 
         <View style={styles.intro}>
           <Text style={styles.eyebrow}>A'FRO Color Match</Text>
-          <Text style={styles.title}>Find catalog colors that match your tone</Text>
+          <Text style={styles.title}>{t('Find catalog colors that match your tone')}</Text>
           <Text style={styles.subtitle}>
             Upload or take a clear face photo. The result can filter the real catalog by matching product colors.
           </Text>
@@ -155,7 +157,7 @@ export default function SkinToneScreen() {
             disabled={isLoading}
           >
             <Ionicons name="cloud-upload-outline" size={18} color={Colors.white} />
-            <Text style={styles.primaryButtonText}>Upload Image</Text>
+            <Text style={styles.primaryButtonText}>{t('Upload Image')}</Text>
           </Pressable>
 
           <Pressable
@@ -168,7 +170,7 @@ export default function SkinToneScreen() {
             disabled={isLoading}
           >
             <Ionicons name="camera-outline" size={18} color={Colors.text.primary} />
-            <Text style={styles.secondaryButtonText}>Use Camera</Text>
+            <Text style={styles.secondaryButtonText}>{t('Use Camera')}</Text>
           </Pressable>
         </View>
 

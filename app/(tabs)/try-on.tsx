@@ -33,6 +33,7 @@ import {
 } from '@/lib/tryOn';
 import { Colors, FontSize, Radius, Spacing } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/useAuthStore';
+import { useTranslation } from '@/lib/i18n';
 import { useTryOnJobStore } from '@/hooks/useTryOnJobStore';
 import { useNav } from '@/context/NavContext';
 
@@ -750,6 +751,7 @@ function MeasurementInput({
 }
 
 export default function TryOnScreen() {
+  const { t } = useTranslation();
   const router = useRouter();
   const { openNav } = useNav();
   const { productId, productIds, mixMatchMode, layeringStyle, bodyChestCm, bodyWaistCm, bodyHipCm, bodyHeightCm } = useLocalSearchParams<{
@@ -1320,7 +1322,7 @@ export default function TryOnScreen() {
         >
           <Ionicons name="arrow-back" size={25} color={Colors.text.primary} />
         </TouchableOpacity>
-        <Text style={styles.pageTitle}>Try On</Text>
+        <Text style={styles.pageTitle}>{t('Try On')}</Text>
         <View style={styles.headerIcon} />
       </View>
 

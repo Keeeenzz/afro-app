@@ -13,30 +13,41 @@ import { StepIndicator } from '@/components/auth/StepIndicator';
 import { KeyboardNumpad } from '@/components/auth/KeyboardNumpad';
 import { useAuthStore } from '@/hooks/useAuthStore';
 import { Colors, FontSize, Radius, Spacing } from '@/constants/theme';
+import { apiPost } from '@/lib/api';
 
-const OTP_EXPIRY = 4 * 60 + 14; // 4:14 in seconds
+const OTP_EXPIRY = 5 * 60;
+
+function secondsUntil(isoDate?: string) {
+  if (!isoDate) return 0;
+  return Math.max(0, Math.ceil((new Date(isoDate).getTime() - Date.now()) / 1000));
+}
 
 export default function VerifyPage() {
   const router = useRouter();
   const draft = useAuthStore((s) => s.draft);
+  const setDraft = useAuthStore((s) => s.setDraft);
+  const initialSecondsLeft = Number(draft.phone_otp_expires_in_seconds ?? 0) || secondsUntil(draft.phone_otp_expires_at);
 
   const [otp, setOtp] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [secondsLeft, setSecondsLeft] = useState(OTP_EXPIRY);
-  const [expired, setExpired] = useState(false);
+  const [secondsLeft, setSecondsLeft] = useState(() => initialSecondsLeft || OTP_EXPIRY);
+  const [expired, setExpired] = useState(() => !draft.phone_otp_expires_at || initialSecondsLeft === 0);
+  const [resendSecondsLeft, setResendSecondsLeft] = useState(() => secondsUntil(draft.phone_otp_resend_at));
 
-  // Countdown timer
   useEffect(() => {
-    if (secondsLeft <= 0) {
-      setExpired(true);
-      return;
-    }
-    const timer = setInterval(() => {
-      setSecondsLeft((s) => s - 1);
-    }, 1000);
+    const timer = setInterval(() => setSecondsLeft((seconds) => Math.max(0, seconds - 1)), 1000);
     return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    if (secondsLeft <= 0) setExpired(true);
   }, [secondsLeft]);
+
+  useEffect(() => {
+    const timer = setInterval(() => setResendSecondsLeft((seconds) => Math.max(0, seconds - 1)), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   const formatTime = (secs: number) => {
     const m = Math.floor(secs / 60).toString().padStart(2, '0');
@@ -66,22 +77,46 @@ export default function VerifyPage() {
     }
     setLoading(true);
     try {
-      // Simulated verification — accepts any 6-digit code
-      await new Promise((r) => setTimeout(r, 800));
+      const result = await apiPost<{ verificationId: string }>('/auth/sms-otp/verify', {
+        verificationId: draft.phone_otp_verification_id,
+        phone: draft.phone,
+        code: otp,
+      });
+      setDraft({ phone_verification_id: result.verificationId });
       router.push('/(auth)/notifications');
-    } catch {
-      setError('Invalid code. Please try again.');
+    } catch (verifyError) {
+      setError(verifyError instanceof Error ? verifyError.message : 'Invalid code. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleResend = () => {
-    setOtp('');
+  const handleResend = async () => {
+    if (loading || resendSecondsLeft > 0) return;
+    setLoading(true);
     setError('');
-    setExpired(false);
-    setSecondsLeft(OTP_EXPIRY);
-    // TODO: call API to resend OTP
+    try {
+      const result = await apiPost<{
+        verificationId: string;
+        expiresAt: string;
+        expiresInSeconds: number;
+        resendAfterSeconds: number;
+      }>('/auth/sms-otp/send', { phone: draft.phone });
+      setDraft({
+        phone_otp_verification_id: result.verificationId,
+        phone_otp_expires_at: result.expiresAt,
+        phone_otp_expires_in_seconds: String(result.expiresInSeconds),
+        phone_otp_resend_at: new Date(Date.now() + Number(result.resendAfterSeconds ?? 60) * 1000).toISOString(),
+      });
+      setOtp('');
+      setExpired(false);
+      setSecondsLeft(Number(result.expiresInSeconds ?? OTP_EXPIRY));
+      setResendSecondsLeft(Number(result.resendAfterSeconds ?? 60));
+    } catch (resendError) {
+      setError(resendError instanceof Error ? resendError.message : 'Could not resend the code. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -123,10 +158,10 @@ export default function VerifyPage() {
           ) : (
             <Text style={styles.expiredText}>Code expired</Text>
           )}
-          <TouchableOpacity onPress={handleResend}>
+          <TouchableOpacity onPress={handleResend} disabled={loading || resendSecondsLeft > 0}>
             <Text style={styles.resendText}>
               Didn't get a code?{' '}
-              <Text style={styles.resendLink}>Resend</Text>
+              <Text style={styles.resendLink}>{resendSecondsLeft > 0 ? `Resend in ${resendSecondsLeft}s` : 'Resend'}</Text>
             </Text>
           </TouchableOpacity>
         </View>

@@ -14,12 +14,14 @@ import { StepIndicator } from '@/components/auth/StepIndicator';
 import { KeyboardNumpad } from '@/components/auth/KeyboardNumpad';
 import { useAuthStore } from '@/hooks/useAuthStore';
 import { Colors, FontSize, Radius, Spacing } from '@/constants/theme';
+import { apiPost } from '@/lib/api';
 
 export default function SignupPage() {
   const router = useRouter();
   const setDraft = useAuthStore((s) => s.setDraft);
   const [phone, setPhone] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
   const handleKey = (key: string) => {
     if (phone.length >= 10) return;
@@ -54,10 +56,30 @@ export default function SignupPage() {
     return true;
   };
 
-  const handleContinue = () => {
+  const handleContinue = async () => {
     if (!validate()) return;
-    setDraft({ phone: phone.replace(/\D/g, '') });
-    router.push('/(auth)/verify');
+    const normalizedPhone = phone.replace(/\D/g, '');
+    setLoading(true);
+    try {
+      const result = await apiPost<{
+        verificationId: string;
+        expiresAt: string;
+        expiresInSeconds: number;
+        resendAfterSeconds: number;
+      }>('/auth/sms-otp/send', { phone: normalizedPhone });
+      setDraft({
+        phone: normalizedPhone,
+        phone_otp_verification_id: result.verificationId,
+        phone_otp_expires_at: result.expiresAt,
+        phone_otp_expires_in_seconds: String(result.expiresInSeconds),
+        phone_otp_resend_at: new Date(Date.now() + Number(result.resendAfterSeconds ?? 60) * 1000).toISOString(),
+      });
+      router.push('/(auth)/verify');
+    } catch (sendError) {
+      setError(sendError instanceof Error ? sendError.message : 'Could not send a verification SMS. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -89,6 +111,7 @@ export default function SignupPage() {
         <Button
           label="Continue"
           onPress={handleContinue}
+          loading={loading}
           style={styles.btn}
         />
 

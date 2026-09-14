@@ -11,6 +11,7 @@ type ApiOptions = {
   method?: string;
   body?: unknown;
   token?: string | null;
+  signal?: AbortSignal;
 };
 
 export async function apiRequest<T>(path: string, options: ApiOptions = {}): Promise<T> {
@@ -21,6 +22,7 @@ export async function apiRequest<T>(path: string, options: ApiOptions = {}): Pro
       ...(options.token ? { Authorization: `Bearer ${options.token}` } : {}),
     },
     body: options.body === undefined ? undefined : JSON.stringify(options.body),
+    signal: options.signal,
   });
 
   if (!response.ok) {
@@ -31,12 +33,12 @@ export async function apiRequest<T>(path: string, options: ApiOptions = {}): Pro
   return response.json();
 }
 
-export function apiGet<T>(path: string, token?: string | null) {
-  return apiRequest<T>(path, { token });
+export function apiGet<T>(path: string, token?: string | null, signal?: AbortSignal) {
+  return apiRequest<T>(path, { token, signal });
 }
 
-export function apiPost<T>(path: string, body: unknown, token?: string | null) {
-  return apiRequest<T>(path, { method: 'POST', body, token });
+export function apiPost<T>(path: string, body: unknown, token?: string | null, signal?: AbortSignal) {
+  return apiRequest<T>(path, { method: 'POST', body, token, signal });
 }
 
 export function apiPatch<T>(path: string, body: unknown, token?: string | null) {

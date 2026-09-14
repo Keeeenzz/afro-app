@@ -29,6 +29,11 @@ export interface AuthUser {
 type Draft = Partial<{
   email: string;
   email_verification_id: string;
+  phone_otp_verification_id: string;
+  phone_verification_id: string;
+  phone_otp_expires_at: string;
+  phone_otp_expires_in_seconds: string;
+  phone_otp_resend_at: string;
   password: string;
   full_name: string;
   first_name: string;
@@ -62,7 +67,9 @@ interface AuthStore {
   isLoading: boolean;
   error: string | null;
   draft: Draft;
+  language: 'English' | 'Filipino';
   setDraft: (data: Draft) => void;
+  setLanguage: (language: 'English' | 'Filipino') => void;
   clearDraft: () => void;
   setUser: (user: AuthUser, token: string) => void;
   logout: () => void;
@@ -76,7 +83,9 @@ export const useAuthStore = create<AuthStore>((set) => ({
   isLoading: false,
   error: null,
   draft: {},
+  language: 'English',
   setDraft: (data) => set((state) => ({ draft: { ...state.draft, ...data } })),
+  setLanguage: (language) => set({ language }),
   clearDraft: () => set({ draft: {} }),
   setUser: (user, token) => set({ user, token, error: null }),
   logout: () => set({ user: null, token: null, draft: {} }),

@@ -4,6 +4,7 @@ import {
   Alert,
   Image,
   ImageBackground,
+  Modal,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -15,7 +16,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import { apiGet, apiPost, apiPostForm, imageUrl } from '@/lib/api';
+import { apiDelete, apiGet, apiPost, apiPostForm, imageUrl } from '@/lib/api';
 import { containsProfanity, PROFANITY_ERROR } from '@/lib/profanity';
 import { Colors, FontSize, Radius, Spacing } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/useAuthStore';
@@ -32,6 +33,8 @@ type ProductDetail = {
 
 type Review = {
   id: string;
+  userId: string;
+  productId: string;
   userName: string;
   productName: string;
   productImageUrl?: string | null;
@@ -122,6 +125,8 @@ export default function ReviewsScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [replyText, setReplyText] = useState('');
   const [error, setError] = useState('');
+  const [zoomPhoto, setZoomPhoto] = useState('');
+  const [deletingReviewId, setDeletingReviewId] = useState('');
 
   const loadReviews = useCallback(async () => {
     setError('');
@@ -287,6 +292,33 @@ export default function ReviewsScreen() {
     }
   };
 
+  const deleteOwnReview = (review: Review) => {
+    if (!user?.user_id || review.userId !== user.user_id || deletingReviewId) return;
+    Alert.alert('Delete review?', 'This will permanently remove your review and its photos.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          setDeletingReviewId(review.id);
+          try {
+            await apiDelete(`/reviews/${review.id}`, undefined, token);
+            setReviews((current) => current.filter((item) => item.id !== review.id));
+            setSelectedReviewId('');
+            if (productId === review.productId) {
+              setAlreadyReviewed(false);
+              setCanReview(true);
+            }
+          } catch (err) {
+            Alert.alert('Could not delete review', err instanceof Error ? err.message : 'Please try again.');
+          } finally {
+            setDeletingReviewId('');
+          }
+        },
+      },
+    ]);
+  };
+
   if (loading) {
     return (
       <View style={styles.center}>
@@ -386,6 +418,10 @@ export default function ReviewsScreen() {
               onReplyText={setReplyText}
               onSubmitReply={() => submitReply(selectedReview.id)}
               onReact={(type) => toggleReaction(selectedReview.id, type)}
+              onOpenPhoto={setZoomPhoto}
+              canDelete={selectedReview.userId === user?.user_id}
+              deleting={deletingReviewId === selectedReview.id}
+              onDelete={() => deleteOwnReview(selectedReview)}
             />
           ) : (
             <>
@@ -445,6 +481,10 @@ export default function ReviewsScreen() {
                     review={review}
                     onOpen={() => setSelectedReviewId(review.id)}
                     onReact={(type) => toggleReaction(review.id, type)}
+                    onOpenPhoto={setZoomPhoto}
+                    canDelete={review.userId === user?.user_id}
+                    deleting={deletingReviewId === review.id}
+                    onDelete={() => deleteOwnReview(review)}
                   />
                 ))
               )}
@@ -452,6 +492,13 @@ export default function ReviewsScreen() {
           )}
         </ScrollView>
       </View>
+      <Modal visible={Boolean(zoomPhoto)} transparent animationType="fade" onRequestClose={() => setZoomPhoto('')}>
+        <TouchableOpacity style={styles.zoomBackdrop} activeOpacity={1} onPress={() => setZoomPhoto('')}>
+          <TouchableOpacity style={styles.zoomClose} onPress={() => setZoomPhoto('')}><Ionicons name="close" size={28} color="#fff" /></TouchableOpacity>
+          {zoomPhoto ? <Image source={{ uri: zoomPhoto }} style={styles.zoomImage} resizeMode="contain" /> : null}
+          <Text style={styles.zoomHint}>Tap outside the image to close</Text>
+        </TouchableOpacity>
+      </Modal>
     </ImageBackground>
   );
 }
@@ -483,10 +530,18 @@ function ReviewCard({
   review,
   onOpen,
   onReact,
+  onOpenPhoto,
+  canDelete = false,
+  deleting = false,
+  onDelete,
 }: {
   review: Review;
   onOpen: () => void;
   onReact: (type: 'like' | 'heart') => void;
+  onOpenPhoto: (photo: string) => void;
+  canDelete?: boolean;
+  deleting?: boolean;
+  onDelete?: () => void;
 }) {
   const photos = (review.photos ?? []).filter((photo) => photo && !/^photo\s*\d+$/i.test(photo.trim()));
 
@@ -513,7 +568,9 @@ function ReviewCard({
       {photos.length ? (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.reviewPhotos}>
           {photos.map((photo) => (
-            <Image key={photo} source={{ uri: imageUrl(photo) ?? photo }} style={styles.reviewPhoto} />
+            <TouchableOpacity key={photo} onPress={(event) => { event.stopPropagation(); onOpenPhoto(imageUrl(photo) ?? photo); }}>
+              <Image source={{ uri: imageUrl(photo) ?? photo }} style={styles.reviewPhoto} />
+            </TouchableOpacity>
           ))}
         </ScrollView>
       ) : null}
@@ -532,6 +589,12 @@ function ReviewCard({
           <Ionicons name="chatbubble-outline" size={14} color={Colors.text.primary} />
           <Text style={styles.actionText}>{review.replyCount} replies</Text>
         </TouchableOpacity>
+        {canDelete ? (
+          <TouchableOpacity style={styles.deleteReviewChip} onPress={onDelete} disabled={deleting}>
+            <Ionicons name="trash-outline" size={14} color={Colors.status.error} />
+            <Text style={styles.deleteReviewText}>{deleting ? 'Deleting...' : 'Delete'}</Text>
+          </TouchableOpacity>
+        ) : null}
       </View>
 
       {review.replies?.length ? (
@@ -554,16 +617,24 @@ function ReviewDetail({
   onReplyText,
   onSubmitReply,
   onReact,
+  onOpenPhoto,
+  canDelete,
+  deleting,
+  onDelete,
 }: {
   review: Review;
   replyText: string;
   onReplyText: (value: string) => void;
   onSubmitReply: () => void;
   onReact: (type: 'like' | 'heart') => void;
+  onOpenPhoto: (photo: string) => void;
+  canDelete: boolean;
+  deleting: boolean;
+  onDelete: () => void;
 }) {
   return (
     <View style={styles.detailCard}>
-      <ReviewCard review={review} onOpen={() => undefined} onReact={onReact} />
+      <ReviewCard review={review} onOpen={() => undefined} onReact={onReact} onOpenPhoto={onOpenPhoto} canDelete={canDelete} deleting={deleting} onDelete={onDelete} />
       <Text style={styles.detailTitle}>Comments</Text>
       {review.replies?.length ? (
         review.replies.map((reply) => (
@@ -786,6 +857,10 @@ const styles = StyleSheet.create({
   reviewBody: { color: Colors.text.primary, fontSize: FontSize.xs, lineHeight: 17, marginTop: Spacing.xs },
   reviewPhotos: { gap: Spacing.sm, paddingTop: Spacing.sm },
   reviewPhoto: { width: 58, height: 58, borderRadius: Radius.sm, backgroundColor: '#EDF4FD' },
+  zoomBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', alignItems: 'center', justifyContent: 'center', padding: Spacing.lg },
+  zoomImage: { width: '100%', height: '82%' },
+  zoomClose: { position: 'absolute', right: Spacing.lg, top: 56, zIndex: 2, padding: Spacing.sm },
+  zoomHint: { color: '#fff', fontSize: FontSize.xs, marginTop: Spacing.md },
   reviewLine: { height: 1, backgroundColor: 'rgba(255,255,255,0.24)', marginVertical: Spacing.sm },
   actionRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
   actionChip: {
@@ -799,6 +874,8 @@ const styles = StyleSheet.create({
   },
   actionChipActive: { backgroundColor: Colors.brand.blue },
   actionText: { color: Colors.text.primary, fontSize: 10, fontWeight: '900' },
+  deleteReviewChip: { minHeight: 28, borderRadius: Radius.full, backgroundColor: '#FDECEC', paddingHorizontal: Spacing.sm, flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
+  deleteReviewText: { color: Colors.status.error, fontSize: 10, fontWeight: '900' },
   replyPreview: {
     borderTopWidth: 1,
     borderTopColor: 'rgba(255,255,255,0.16)',

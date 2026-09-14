@@ -157,7 +157,7 @@ export default function UploadIdPage() {
                 router.back();
                 return;
               }
-              router.push('/(auth)/customize-feed');
+              Alert.alert('Verification required to purchase', 'You can continue browsing, but you cannot place an order until a valid ID is submitted and verified.', [{ text: 'Upload ID' }, { text: 'Skip for now', style: 'cancel', onPress: () => router.push('/(auth)/customize-feed') }]);
             }}
             style={styles.skipRow}
           >

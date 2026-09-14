@@ -16,6 +16,7 @@ import { Colors, FontSize, Radius, Spacing } from '@/constants/theme';
 import { useNav } from '@/context/NavContext';
 import { useAuthStore } from '@/hooks/useAuthStore';
 import { apiGet, imageUrl } from '@/lib/api';
+import { useTranslation } from '@/lib/i18n';
 
 type Product = {
   id: string;
@@ -119,6 +120,7 @@ export default function MixMatchScreen() {
   const router = useRouter();
   const { openNav } = useNav();
   const { user } = useAuthStore();
+  const { t } = useTranslation();
   const [products, setProducts] = useState<Product[]>([]);
   const [mixMode, setMixMode] = useState<MixMode>('top_bottom');
   const [dressTopStyle, setDressTopStyle] = useState<DressTopStyle>('over');
@@ -143,7 +145,9 @@ export default function MixMatchScreen() {
   }, []);
 
   useEffect(() => {
-    setSelectedSize(user?.preferred_size ?? '');
+    // Show all active catalog pieces first. The user can optionally narrow this
+    // list by size instead of silently hiding valid tops based on their profile.
+    setSelectedSize('');
     setSessionChestCm(String(user?.body_chest_cm ?? ''));
     setSessionWaistCm(String(user?.body_waist_cm ?? ''));
     setSessionHipCm(String(user?.body_hip_cm ?? ''));
@@ -273,13 +277,13 @@ export default function MixMatchScreen() {
         <TouchableOpacity style={styles.headerIcon} onPress={() => router.back()} activeOpacity={0.75}>
           <Ionicons name="arrow-back" size={25} color={Colors.text.primary} />
         </TouchableOpacity>
-        <Text style={styles.pageTitle}>Mix & Match</Text>
+        <Text style={styles.pageTitle}>{t('Mix & Match')}</Text>
         <View style={styles.headerIcon} />
       </View>
 
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
         <Text style={styles.subtitle}>
-          Build a layered look from live admin products, then send it to Try On.
+          {t('Experiment and combine our products, then send it to Try On.')}
         </Text>
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -323,7 +327,7 @@ export default function MixMatchScreen() {
 
         <View style={styles.measurementBox}>
           <View style={styles.measurementHeader}>
-            <Text style={styles.boxTitle}>Mix & Match measurements</Text>
+            <Text style={styles.boxTitle}>{t('Mix & Match measurements')}</Text>
             <Text style={styles.measurementHint}>
               {selectedSize ? `Size ${selectedSize}` : 'All sizes'}
             </Text>
@@ -346,27 +350,22 @@ export default function MixMatchScreen() {
           </View>
         </View>
 
+        <Text style={styles.mixInstruction}>
+          {t('Tap the arrows to browse items and build your outfit.')}
+        </Text>
         <View style={styles.stage}>
           {mixMode === 'top_bottom' ? (
             <>
               <CarouselSlot
-                label="Top"
                 product={selectedTop}
-                currentIndex={topIndex}
-                total={tops.length}
-                emptyText="No active tops yet."
+                emptyText={t('No active tops yet.')}
                 onPrevious={() => setTopIndex((current) => wrapIndex(current, tops.length, -1))}
                 onNext={() => setTopIndex((current) => wrapIndex(current, tops.length, 1))}
                 disabled={tops.length <= 1}
               />
 
-              <View style={styles.separator} />
-
               <CarouselSlot
-                label="Bottom"
                 product={selectedBottom}
-                currentIndex={bottomIndex}
-                total={bottoms.length}
                 emptyText="No active bottoms yet."
                 onPrevious={() => setBottomIndex((current) => wrapIndex(current, bottoms.length, -1))}
                 onNext={() => setBottomIndex((current) => wrapIndex(current, bottoms.length, 1))}
@@ -378,23 +377,15 @@ export default function MixMatchScreen() {
           {mixMode === 'dress_top' ? (
             <>
               <CarouselSlot
-                label="Dress"
                 product={selectedDress}
-                currentIndex={dressIndex}
-                total={dresses.length}
                 emptyText="No active dresses yet."
                 onPrevious={() => setDressIndex((current) => wrapIndex(current, dresses.length, -1))}
                 onNext={() => setDressIndex((current) => wrapIndex(current, dresses.length, 1))}
                 disabled={dresses.length <= 1}
               />
 
-              <View style={styles.separator} />
-
               <CarouselSlot
-                label="Top"
                 product={selectedShirt}
-                currentIndex={shirtIndex}
-                total={tops.length}
                 emptyText="No active tops yet."
                 onPrevious={() => setShirtIndex((current) => wrapIndex(current, tops.length, -1))}
                 onNext={() => setShirtIndex((current) => wrapIndex(current, tops.length, 1))}
@@ -406,23 +397,15 @@ export default function MixMatchScreen() {
           {mixMode === 'dress_bottom' ? (
             <>
               <CarouselSlot
-                label="Dress"
                 product={selectedDress}
-                currentIndex={dressIndex}
-                total={dresses.length}
                 emptyText="No active dresses yet."
                 onPrevious={() => setDressIndex((current) => wrapIndex(current, dresses.length, -1))}
                 onNext={() => setDressIndex((current) => wrapIndex(current, dresses.length, 1))}
                 disabled={dresses.length <= 1}
               />
 
-              <View style={styles.separator} />
-
               <CarouselSlot
-                label="Bottom"
                 product={selectedBottom}
-                currentIndex={bottomIndex}
-                total={bottoms.length}
                 emptyText="No active bottoms yet."
                 onPrevious={() => setBottomIndex((current) => wrapIndex(current, bottoms.length, -1))}
                 onNext={() => setBottomIndex((current) => wrapIndex(current, bottoms.length, 1))}
@@ -433,7 +416,7 @@ export default function MixMatchScreen() {
 
         </View>
 
-        <Text style={styles.sectionTitle}>Selected items</Text>
+        <Text style={styles.sectionTitle}>{t('Selected items')}</Text>
         <View style={styles.selectedList}>
           {mixMode === 'top_bottom' ? (
             <>
@@ -462,7 +445,7 @@ export default function MixMatchScreen() {
           activeOpacity={0.82}
         >
           <Ionicons name="sparkles-outline" size={17} color={Colors.white} />
-          <Text style={styles.tryOnText}>Try On This Look</Text>
+          <Text style={styles.tryOnText}>{t('Try On This Look')}</Text>
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
@@ -470,19 +453,13 @@ export default function MixMatchScreen() {
 }
 
 function CarouselSlot({
-  label,
   product,
-  currentIndex,
-  total,
   emptyText,
   onPrevious,
   onNext,
   disabled,
 }: {
-  label: string;
   product: Product | null;
-  currentIndex: number;
-  total: number;
   emptyText: string;
   onPrevious: () => void;
   onNext: () => void;
@@ -502,9 +479,6 @@ function CarouselSlot({
       </TouchableOpacity>
 
       <View style={styles.itemDisplay}>
-        <Text style={styles.slotLabel}>
-          {total > 0 ? `${label} ${currentIndex + 1}/${total}` : label}
-        </Text>
         {product ? (
           <>
             <View style={styles.imagePanel}>
@@ -514,9 +488,6 @@ function CarouselSlot({
                 <Ionicons name="shirt-outline" size={44} color={Colors.text.secondary} />
               )}
             </View>
-            <Text style={styles.itemName} numberOfLines={2}>
-              {product.name}
-            </Text>
           </>
         ) : (
           <View style={styles.emptyPanel}>
@@ -721,12 +692,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginBottom: Spacing.sm,
+    gap: Spacing.sm,
   },
   measurementHint: {
     color: Colors.brand.blue,
     fontSize: 10,
     fontWeight: '900',
     textTransform: 'uppercase',
+    flexShrink: 1,
+    textAlign: 'right',
   },
   measureGrid: {
     flexDirection: 'row',
@@ -758,7 +732,8 @@ const styles = StyleSheet.create({
     color: Colors.text.primary,
     fontSize: FontSize.sm,
     fontWeight: '900',
-    marginBottom: Spacing.sm,
+    marginBottom: 0,
+    flexShrink: 1,
     textTransform: 'uppercase',
   },
   stage: {
@@ -766,19 +741,14 @@ const styles = StyleSheet.create({
     borderColor: Colors.border.default,
     borderRadius: Radius.lg,
     borderWidth: 1,
-    paddingVertical: Spacing.md,
+    gap: Spacing.xs,
+    paddingVertical: Spacing.sm,
   },
   slot: {
     alignItems: 'center',
     flexDirection: 'row',
-    minHeight: 232,
+    minHeight: 178,
     paddingHorizontal: Spacing.sm,
-  },
-  separator: {
-    alignSelf: 'center',
-    backgroundColor: Colors.border.default,
-    height: 1,
-    width: '72%',
   },
   arrowButton: {
     alignItems: 'center',
@@ -798,13 +768,6 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: Spacing.sm,
   },
-  slotLabel: {
-    color: Colors.brand.blue,
-    fontSize: FontSize.xs,
-    fontWeight: '900',
-    marginBottom: Spacing.sm,
-    textTransform: 'uppercase',
-  },
   imagePanel: {
     alignItems: 'center',
     backgroundColor: '#F7FBFF',
@@ -819,15 +782,6 @@ const styles = StyleSheet.create({
   itemImage: {
     height: '92%',
     width: '92%',
-  },
-  itemName: {
-    color: Colors.text.primary,
-    fontSize: FontSize.sm,
-    fontWeight: '900',
-    lineHeight: 18,
-    marginTop: Spacing.sm,
-    minHeight: 36,
-    textAlign: 'center',
   },
   emptyPanel: {
     alignItems: 'center',
@@ -844,6 +798,12 @@ const styles = StyleSheet.create({
     color: Colors.text.secondary,
     fontSize: FontSize.sm,
     marginTop: Spacing.sm,
+    textAlign: 'center',
+  },
+  mixInstruction: {
+    color: Colors.text.secondary,
+    fontSize: FontSize.xs,
+    marginBottom: Spacing.xs,
     textAlign: 'center',
   },
   sectionTitle: {

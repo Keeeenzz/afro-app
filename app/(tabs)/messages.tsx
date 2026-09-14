@@ -14,12 +14,14 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
-import { apiDelete, apiGet, apiPost, imageUrl } from '@/lib/api';
+import { apiDelete, apiGet, apiPost, apiPostForm, imageUrl } from '@/lib/api';
 import { containsProfanity, PROFANITY_ERROR } from '@/lib/profanity';
 import { Colors, FontSize, Radius, Spacing } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/useAuthStore';
 import { useNav } from '@/context/NavContext';
+import { useTranslation } from '@/lib/i18n';
 
 type ChatMessage = {
   id: string;
@@ -43,6 +45,13 @@ type ChatProduct = {
   reviewed?: boolean;
 };
 
+type ChatbotAction = {
+  id: string;
+  label: string;
+  prompt: string;
+  action?: 'OPEN_TRY_ON' | 'OPEN_TRACKING' | 'OPEN_ORDER_DETAILS' | 'ADD_TO_CART' | 'TRANSFER_TO_AGENT';
+};
+
 type Conversation = {
   id: string;
   name: string;
@@ -53,6 +62,7 @@ type Conversation = {
   isAi?: boolean;
   type?: 'support' | 'ai';
   product?: ChatProduct | null;
+  chatbot?: { quickActions: ChatbotAction[]; action?: ChatbotAction['action']; orderId?: string };
 };
 
 type FilterMode = 'Newest' | 'Oldest' | 'Unread';
@@ -66,7 +76,8 @@ export default function MessagesScreen() {
   const router = useRouter();
   const navigation = useNavigation();
   const { openNav } = useNav();
-  const { conversationId } = useLocalSearchParams<{ conversationId?: string }>();
+  const { t } = useTranslation();
+  const { conversationId, startAi } = useLocalSearchParams<{ conversationId?: string; startAi?: string }>();
   const { user, token } = useAuthStore();
   const scrollRef = useRef<ScrollView>(null);
 
@@ -92,7 +103,14 @@ export default function MessagesScreen() {
     }
 
     const data = await apiGet<Conversation[]>(`/chat/users/${user.user_id}/conversations`, token);
-    setConversations(data);
+    setConversations((current) => data.map((incoming) => {
+      const previous = current.find((item) => item.id === incoming.id);
+      // The API supplies the default menu while a posted reply supplies a
+      // deeper menu. Keep that deeper menu during the background refresh.
+      return previous?.chatbot && activeId === incoming.id
+        ? { ...incoming, chatbot: previous.chatbot }
+        : incoming;
+    }));
 
     if (conversationId && data.some((item) => item.id === conversationId)) {
       setActiveId(conversationId);
@@ -100,7 +118,7 @@ export default function MessagesScreen() {
     }
 
     setActiveId((current) => (current && data.some((item) => item.id === current) ? current : null));
-  }, [conversationId, token, user?.user_id]);
+  }, [activeId, conversationId, token, user?.user_id]);
 
   useEffect(() => {
     loadConversations()
@@ -161,8 +179,20 @@ export default function MessagesScreen() {
     }
   };
 
-  const sendMessage = async () => {
-    const text = draft.trim();
+  const runChatbotAction = (action?: ChatbotAction['action'], orderId?: string) => {
+    if (!action) return;
+    if (action === 'OPEN_TRY_ON') {
+      router.push({ pathname: '/(tabs)/try-on', params: activeConversation?.product?.id ? { productId: activeConversation.product.id } : {} });
+    } else if (action === 'OPEN_TRACKING' || action === 'OPEN_ORDER_DETAILS') {
+      const selectedOrderId = orderId ?? activeConversation?.product?.placedOrderId;
+      if (selectedOrderId) router.push({ pathname: '/(tabs)/orders', params: { orderId: selectedOrderId } });
+    } else if (action === 'ADD_TO_CART' && activeConversation?.product) {
+      handleProductAction(activeConversation.product, 'add');
+    }
+  };
+
+  const sendMessage = async (quickPrompt?: string) => {
+    const text = (quickPrompt ?? draft).trim();
     if (!text || !activeConversation || !user?.user_id || sending) return;
 
     if (containsProfanity(text)) {
@@ -183,6 +213,7 @@ export default function MessagesScreen() {
         return [updated, ...next];
       });
       setActiveId(updated.id);
+      runChatbotAction(updated.chatbot?.action, updated.chatbot?.orderId);
     } catch (err) {
       setDraft(text);
       setError(err instanceof Error ? err.message : 'Could not send message.');
@@ -238,6 +269,30 @@ if (isAiConversation(selectedConversation ?? null)) {
       setStartingAi(false);
     }
   };
+
+  const attachImage = async () => {
+    if (!activeConversation || !user?.user_id || sending) return;
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) { Alert.alert('Permission needed', 'Allow photo access to attach an image.'); return; }
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.9 });
+    if (result.canceled || !result.assets[0]) return;
+    const asset = result.assets[0];
+    if (!asset.mimeType?.startsWith('image/')) { Alert.alert('Image required', 'Only image attachments are allowed.'); return; }
+    const form = new FormData();
+    form.append('userId', user.user_id);
+    form.append('image', { uri: asset.uri, name: asset.fileName || `message.${asset.mimeType.split('/')[1] || 'jpg'}`, type: asset.mimeType } as any);
+    setSending(true);
+    try {
+      const updated = await apiPostForm<Conversation>(`/chat/conversations/${activeConversation.id}/images`, form, token);
+      setConversations((current) => [updated, ...current.filter((item) => item.id !== updated.id)]);
+      setActiveId(updated.id);
+    } catch (error) { Alert.alert('Could not send image', error instanceof Error ? error.message : 'Please try again.'); }
+    finally { setSending(false); }
+  };
+
+  useEffect(() => {
+    if (startAi === '1' && !activeId && !startingAi) void openAiAssistant();
+  }, [activeId, startAi]);
 
   const deleteConversationForMe = async (id: string) => {
     if (!user?.user_id || deletingId) return;
@@ -432,7 +487,7 @@ if (isAiConversation(selectedConversation ?? null)) {
                 <View key={message.id} style={[styles.messageRow, fromCustomer && styles.messageRowCustomer]}>
                   {!fromCustomer ? <Avatar /> : null}
                   <View style={[styles.messageBubble, fromCustomer ? styles.customerBubble : styles.adminBubble]}>
-                    <Text style={[styles.messageText, fromCustomer && styles.customerMessageText]}>{message.text}</Text>
+                    {message.text.startsWith('/uploads/messages/') ? <Image source={{ uri: imageUrl(message.text) ?? message.text }} style={styles.messageImage} resizeMode="cover" /> : <Text style={[styles.messageText, fromCustomer && styles.customerMessageText]}>{message.text}</Text>}
                     <Text style={[styles.messageTime, fromCustomer && styles.customerTime]}>
                       {message.time}
                       {fromCustomer ? `  ${message.isRead ? `Read at ${message.readAt || message.time}` : 'Delivered'}` : ''}
@@ -441,12 +496,21 @@ if (isAiConversation(selectedConversation ?? null)) {
                 </View>
               );
             })}
+            {activeIsAi && activeConversation.chatbot?.quickActions?.length ? (
+              <View style={styles.chatbotActions}>
+                {activeConversation.chatbot.quickActions.map((action) => (
+                  <TouchableOpacity key={action.id} style={styles.chatbotAction} onPress={() => sendMessage(action.prompt)} disabled={sending}>
+                    <Text style={styles.chatbotActionText}>{action.label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            ) : null}
           </ScrollView>
 
           {error ? <Text style={styles.error}>{error}</Text> : null}
 
           <View style={styles.inputBar}>
-            <TouchableOpacity style={styles.attachButton} activeOpacity={0.75}>
+            <TouchableOpacity style={styles.attachButton} activeOpacity={0.75} onPress={() => void attachImage()} disabled={sending}>
               <Ionicons name="attach-outline" size={22} color={Colors.text.primary} />
             </TouchableOpacity>
             <TextInput
@@ -459,7 +523,7 @@ if (isAiConversation(selectedConversation ?? null)) {
             />
             <TouchableOpacity
               style={[styles.sendButton, (!draft.trim() || sending) && styles.sendButtonDisabled]}
-              onPress={sendMessage}
+              onPress={() => sendMessage()}
               disabled={!draft.trim() || sending}
               activeOpacity={0.75}
             >
@@ -490,7 +554,7 @@ if (isAiConversation(selectedConversation ?? null)) {
               <TouchableOpacity style={styles.backPageButton} onPress={() => router.back()}>
                 <Ionicons name="arrow-back" size={25} color={Colors.text.primary} />
               </TouchableOpacity>
-              <Text style={styles.pageTitle}>Messages</Text>
+              <Text style={styles.pageTitle}>{t('Messages')}</Text>
               <View style={styles.backPageButton} />
             </View>
           </View>
@@ -539,6 +603,10 @@ if (isAiConversation(selectedConversation ?? null)) {
             <TouchableOpacity style={styles.quickAction} onPress={() => setFaqOpen((open) => !open)} activeOpacity={0.8}>
               <Ionicons name="help-circle-outline" size={20} color={Colors.brand.blue} />
               <Text style={styles.quickActionText}>FAQ</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.quickAction} onPress={openAiAssistant} activeOpacity={0.8} disabled={startingAi}>
+              <Ionicons name="sparkles-outline" size={20} color={Colors.brand.blue} />
+              <Text style={styles.quickActionText}>{startingAi ? 'Opening…' : 'AI Chat'}</Text>
             </TouchableOpacity>
           </View>
 
@@ -1002,6 +1070,7 @@ const styles = StyleSheet.create({
     fontWeight: '400',
     lineHeight: 17,
   },
+  messageImage: { width: 190, height: 190, borderRadius: Radius.sm },
   messageTime: {
     color: Colors.text.secondary,
     fontSize: 9,
@@ -1016,6 +1085,9 @@ const styles = StyleSheet.create({
   quickActions: { flexDirection: 'row', marginBottom: Spacing.lg },
   quickAction: { alignItems: 'center', gap: 6, minWidth: 72 },
   quickActionText: { color: Colors.text.secondary, fontSize: FontSize.xs, fontWeight: '700' },
+  chatbotActions: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.xs, paddingHorizontal: Spacing.md },
+  chatbotAction: { backgroundColor: '#EAF4FF', borderColor: Colors.border.default, borderRadius: Radius.full, borderWidth: 1, paddingHorizontal: Spacing.sm, paddingVertical: Spacing.xs },
+  chatbotActionText: { color: Colors.text.primary, fontSize: FontSize.xs, fontWeight: '700' },
   faqCard: { backgroundColor: '#FFFFFF', borderColor: Colors.border.default, borderWidth: 1, borderRadius: Radius.md, padding: Spacing.md, marginBottom: Spacing.lg },
   faqTitle: { color: Colors.text.primary, fontSize: FontSize.base, fontWeight: '900', marginBottom: Spacing.sm },
   faqItem: { color: Colors.text.secondary, fontSize: FontSize.xs, lineHeight: 18, marginBottom: Spacing.xs },

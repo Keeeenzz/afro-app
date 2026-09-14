@@ -65,7 +65,7 @@ export default function PasswordPage() {
   const handleContinue = () => {
     if (!validate()) return;
     setDraft({ password });
-    router.push('/(auth)/upload-id');
+    router.push('/(auth)/customize-feed');
   };
 
   return (
@@ -79,7 +79,7 @@ export default function PasswordPage() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          <StepIndicator total={8} current={6} />
+          <StepIndicator total={7} current={6} />
 
           <ScreenHeader
             title="Password"

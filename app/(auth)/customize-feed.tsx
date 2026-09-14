@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { useAuthStore } from '@/hooks/useAuthStore';
 import { Colors, FontSize, Radius, Spacing } from '@/constants/theme';
-import { apiPatch, apiPost } from '@/lib/api';
+import { apiGet, apiPatch, apiPost } from '@/lib/api';
 
 const STYLES = [
   'Streetwear',
@@ -27,6 +27,14 @@ const STYLES = [
 ];
 
 const SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '2XL', '3XL'];
+
+type SizeStandard = {
+  label: string;
+  chestCmMin?: number | null; chestCmMax?: number | null;
+  waistCmMin?: number | null; waistCmMax?: number | null;
+  hipCmMin?: number | null; hipCmMax?: number | null;
+  heightCmMin?: number | null; heightCmMax?: number | null;
+};
 
 const SKIN_TONES = [
   { label: 'Fair', hex: '#F6D7C3' },
@@ -44,10 +52,17 @@ function toNullableNumber(value: string) {
   return Number.isFinite(numeric) ? numeric : null;
 }
 
+function midpoint(min?: number | null, max?: number | null) {
+  if (!Number.isFinite(min) && !Number.isFinite(max)) return '';
+  const value = Number.isFinite(min) && Number.isFinite(max) ? (Number(min) + Number(max)) / 2 : Number(min ?? max);
+  return String(Math.round(value * 10) / 10);
+}
+
 export default function CustomizeFeedPage() {
   const router = useRouter();
   const draft = useAuthStore((s) => s.draft);
   const setDraft = useAuthStore((s) => s.setDraft);
+  const clearDraft = useAuthStore((s) => s.clearDraft);
   const user = useAuthStore((s) => s.user);
   const token = useAuthStore((s) => s.token);
   const setUser = useAuthStore((s) => s.setUser);
@@ -60,7 +75,9 @@ export default function CustomizeFeedPage() {
   const [waistCm, setWaistCm] = useState('');
   const [hipCm, setHipCm] = useState('');
   const [heightCm, setHeightCm] = useState('');
+  const [sizeStandards, setSizeStandards] = useState<SizeStandard[]>([]);
   const [error, setError] = useState('');
+  const [existingAccountConflict, setExistingAccountConflict] = useState(false);
   const [loading, setLoading] = useState(false);
   const profileName = useMemo(() => user?.full_name ?? draft.full_name ?? 'New Member', [
     draft.full_name,
@@ -96,13 +113,37 @@ export default function CustomizeFeedPage() {
     user?.skin_hex,
   ]);
 
+  useEffect(() => {
+    apiGet<{ sizes?: SizeStandard[] }>('/products/meta/lookups')
+      .then((result) => setSizeStandards(result.sizes ?? []))
+      .catch(() => setSizeStandards([]));
+  }, []);
+
   const toggleStyle = (label: string) => {
     setError('');
+    setExistingAccountConflict(false);
     setSelectedStyles((prev) =>
       prev.includes(label)
         ? prev.filter((style) => style !== label)
         : [...prev, label],
     );
+  };
+
+  const selectSize = (size: string) => {
+    setSelectedSize(size);
+    const standard = sizeStandards.find((item) => item.label.toLowerCase() === size.toLowerCase());
+    if (standard) {
+      // These are helpful editable starting points, not locked measurements.
+      const chest = midpoint(standard.chestCmMin, standard.chestCmMax);
+      const waist = midpoint(standard.waistCmMin, standard.waistCmMax);
+      const hip = midpoint(standard.hipCmMin, standard.hipCmMax);
+      const height = midpoint(standard.heightCmMin, standard.heightCmMax);
+      if (chest) setChestCm(chest);
+      if (waist) setWaistCm(waist);
+      if (hip) setHipCm(hip);
+      if (height) setHeightCm(height);
+    }
+    setError('');
   };
 
   const validate = () => {
@@ -144,6 +185,7 @@ export default function CustomizeFeedPage() {
     };
 
     setDraft(profileData);
+    setExistingAccountConflict(false);
     setLoading(true);
 
     try {
@@ -154,6 +196,7 @@ export default function CustomizeFeedPage() {
           token,
         );
         setUser(response.user, token ?? '');
+        clearDraft();
         router.back();
         return;
       }
@@ -163,9 +206,41 @@ export default function CustomizeFeedPage() {
         ...profileData,
       });
       setUser(session.user, session.token);
+      clearDraft();
       router.replace('/(tabs)');
     } catch (registerError) {
-      setError(registerError instanceof Error ? registerError.message : 'Could not save your changes.');
+      const message = registerError instanceof Error ? registerError.message : '';
+
+      if (message === 'Email is already registered' && draft.email && draft.password) {
+        let session: { user: any; token: string };
+        try {
+          session = await apiPost<{ user: any; token: string }>('/auth/app/login', {
+            email: draft.email,
+            password: draft.password,
+          });
+        } catch {
+          setExistingAccountConflict(true);
+          setError('This email is already registered. Log in to continue with that account.');
+          return;
+        }
+
+        try {
+          const response = await apiPatch<{ user: any }>(
+            `/auth/app/profile/${session.user.user_id}`,
+            profileData,
+            session.token,
+          );
+          setUser(response.user, session.token);
+          clearDraft();
+          router.replace('/(tabs)');
+          return;
+        } catch {
+          setError('Your account was found, but we could not save your profile. Please try again.');
+          return;
+        }
+      }
+
+      setError(message || 'Could not save your changes. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -222,16 +297,13 @@ export default function CustomizeFeedPage() {
 
         <Text style={styles.sectionTitle}>Preferred Size</Text>
         <View style={styles.sizeRow}>
-          {SIZES.map((size) => {
+          {(sizeStandards.length ? sizeStandards.map((size) => size.label) : SIZES).map((size) => {
             const selected = selectedSize === size;
             return (
               <TouchableOpacity
                 key={size}
                 style={[styles.sizeChip, selected && styles.sizeChipSelected]}
-                onPress={() => {
-                  setSelectedSize(size);
-                  setError('');
-                }}
+                onPress={() => selectSize(size)}
                 activeOpacity={0.7}
               >
                 <Text style={[styles.sizeLabel, selected && styles.sizeLabelSelected]}>
@@ -326,6 +398,15 @@ export default function CustomizeFeedPage() {
         </View>
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
+        {existingAccountConflict ? (
+          <TouchableOpacity
+            onPress={() => router.replace('/(auth)/login')}
+            style={styles.loginRecovery}
+            activeOpacity={0.75}
+          >
+            <Text style={styles.loginRecoveryText}>Log in instead</Text>
+          </TouchableOpacity>
+        ) : null}
 
         <Button
           label={isEditMode ? 'Save Changes' : 'Finish Setup'}
@@ -502,6 +583,16 @@ const styles = StyleSheet.create({
     fontSize: FontSize.sm,
     marginBottom: Spacing.sm,
     textAlign: 'center',
+  },
+  loginRecovery: {
+    alignSelf: 'center',
+    marginBottom: Spacing.sm,
+    padding: Spacing.xs,
+  },
+  loginRecoveryText: {
+    color: Colors.brand.blue,
+    fontSize: FontSize.sm,
+    fontWeight: '700',
   },
   btn: { marginTop: Spacing.sm },
 });

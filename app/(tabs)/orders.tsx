@@ -4,6 +4,7 @@ import {
   Alert,
   Image,
   ImageBackground,
+  Linking,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -17,6 +18,7 @@ import { apiGet, apiPost, imageUrl } from '@/lib/api';
 import { Colors, FontSize, Radius, Spacing } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/useAuthStore';
 import { useNav } from '@/context/NavContext';
+import { useTranslation } from '@/lib/i18n';
 
 type OrderItem = {
   orderId: string;
@@ -26,6 +28,7 @@ type OrderItem = {
   shippingFee?: number;
   paymentMethod?: string | null;
   trackingNumber?: string | null;
+  trackingUrl?: string | null;
   expectedDeliveryAt?: string | null;
   status: string;
   orderItemId: string;
@@ -61,7 +64,8 @@ function normalizeStatus(status: string): Filter {
 
 function timelineStatus(status: string) {
   const lower = status.toLowerCase();
-  if (lower.includes('deliver') || lower.includes('complete')) return 5;
+  if (lower.includes('deliver') || lower.includes('complete')) return 6;
+  if (lower.includes('transit')) return 5;
   if (lower.includes('ship') || lower.includes('ready')) return 4;
   if (lower.includes('process')) return 3;
   if (lower.includes('confirm')) return 2;
@@ -74,6 +78,7 @@ export default function OrdersScreen() {
   const targetOrderId = Array.isArray(params.orderId) ? params.orderId[0] : params.orderId;
   const { openNav } = useNav();
   const { user, token } = useAuthStore();
+  const { t } = useTranslation();
   const [orders, setOrders] = useState<OrderItem[]>([]);
   const [filter, setFilter] = useState<Filter>('All');
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
@@ -204,7 +209,7 @@ export default function OrdersScreen() {
           <TouchableOpacity onPress={() => (selectedOrderId ? setSelectedOrderId(null) : router.back())}>
             <Ionicons name="arrow-back" size={25} color={Colors.text.primary} />
           </TouchableOpacity>
-          <Text style={styles.titleText}>{selectedOrderId ? 'Track Order' : 'My Orders'}</Text>
+          <Text style={styles.titleText}>{t(selectedOrderId ? 'Track Order' : 'My Orders')}</Text>
           <View style={{ width: 25 }} />
         </View>
 
@@ -221,7 +226,7 @@ export default function OrdersScreen() {
                   style={[styles.filterButton, filter === item && styles.filterButtonActive]}
                   onPress={() => setFilter(item)}
                 >
-                  <Text style={[styles.filterText, filter === item && styles.filterTextActive]}>{item}</Text>
+                  <Text style={[styles.filterText, filter === item && styles.filterTextActive]}>{t(item)}</Text>
                 </TouchableOpacity>
               ))}
             </View>
@@ -230,13 +235,15 @@ export default function OrdersScreen() {
             {!filteredOrders.length ? (
               <View style={styles.empty}>
                 <Ionicons name="receipt-outline" size={42} color={Colors.text.secondary} />
-                <Text style={styles.emptyTitle}>No orders found</Text>
-                <Text style={styles.emptyText}>Your checkout orders will appear here.</Text>
+                <Text style={styles.emptyTitle}>{t('No orders found')}</Text>
+                <Text style={styles.emptyText}>{t('Your checkout orders will appear here.')}</Text>
               </View>
             ) : (
               filteredOrders.map((order) => {
                 const status = normalizeStatus(order.status);
-                const reviewed = Boolean(order.reviewed);
+                const orderItems = orders.filter((item) => item.orderId === order.orderId);
+                const reviewed = orderItems.every((item) => Boolean(item.reviewed));
+                const previewItems = orderItems.slice(0, 3);
                 return (
                   <TouchableOpacity
                     key={order.orderId}
@@ -245,13 +252,17 @@ export default function OrdersScreen() {
                     onPress={() => openOrder(order)}
                     disabled={status !== 'Active' && reviewed}
                   >
-                    {order.imageUrl ? <Image source={{ uri: imageUrl(order.imageUrl) ?? order.imageUrl }} style={styles.orderImage} /> : <View style={styles.orderImage} />}
+                    <View style={[styles.orderImage, orderItems.length > 1 && styles.orderImageGrid]}>
+                      {orderItems.length === 1 ? (order.imageUrl ? <Image source={{ uri: imageUrl(order.imageUrl) ?? order.imageUrl }} style={styles.singleOrderImage} /> : <Ionicons name="shirt-outline" size={28} color={Colors.text.muted} />) : previewItems.map((item) => item.imageUrl ? <Image key={item.orderItemId} source={{ uri: imageUrl(item.imageUrl) ?? item.imageUrl }} style={[styles.orderImageTile, orderItems.length === 2 && styles.orderImageTileTwo]} /> : <View key={item.orderItemId} style={[styles.orderImageTile, styles.orderImagePlaceholder, orderItems.length === 2 && styles.orderImageTileTwo]}><Ionicons name="shirt-outline" size={16} color={Colors.text.muted} /></View>)}
+                      {orderItems.length > 3 ? <View style={styles.moreItems}><Text style={styles.moreItemsText}>+{orderItems.length - 3}</Text></View> : null}
+                    </View>
                     <View style={styles.orderInfo}>
                       <View style={styles.nameRow}>
-                        <Text style={styles.orderName} numberOfLines={1}>{order.productName}</Text>
+                        <Text style={styles.orderName} numberOfLines={1}>{orderItems.length > 1 ? `${orderItems.length} items in this order` : order.productName}</Text>
+                        {orderItems.length > 1 ? <Ionicons name="chevron-down" size={15} color={Colors.text.secondary} /> : null}
                         <Text style={styles.sizeBadge}>{order.size}</Text>
                       </View>
-                      <Text style={styles.orderMeta} numberOfLines={1}>Qty {order.quantity} • {order.status}</Text>
+                      <Text style={styles.orderMeta} numberOfLines={1}>{orderItems.length > 1 ? 'Tap Track to view the item list' : `Qty ${order.quantity}`} • {order.status}</Text>
                       <Text style={styles.orderPrice}>{peso(Number(order.unitPrice) * Number(order.quantity))}</Text>
                       <Text style={[styles.orderStatusLine, status === 'Cancelled' && styles.cancelledText]}>
                         {status === 'Active'
@@ -262,12 +273,12 @@ export default function OrdersScreen() {
                     <View style={styles.orderActionWrap}>
                       {status === 'Active' ? (
                         <TouchableOpacity style={styles.miniButton} onPress={() => openOrder(order)}>
-                          <Text style={styles.miniButtonText}>Track</Text>
+                        <Text style={styles.miniButtonText}>{t('Track')}</Text>
                         </TouchableOpacity>
                       ) : (
                         <TouchableOpacity
                           style={[styles.miniButton, reviewed && styles.miniButtonMuted]}
-                          onPress={() => !reviewed && router.push({ pathname: '/(tabs)/reviews', params: { productId: order.productId, orderId: order.orderId } })}
+                          onPress={() => !reviewed && setSelectedOrderId(order.orderId)}
                           disabled={reviewed}
                         >
                           <Text style={styles.miniButtonText}>{reviewed ? 'Reviewed' : 'To Review'}</Text>
@@ -339,12 +350,22 @@ export default function OrdersScreen() {
               ) : null}
             </View>
 
+            {normalizeStatus(selectedHead.status) !== 'Active' && selectedItem ? (
+              <TouchableOpacity
+                style={[styles.miniButton, Boolean(selectedItem.reviewed) && styles.miniButtonMuted]}
+                onPress={() => !selectedItem.reviewed && router.push({ pathname: '/(tabs)/reviews', params: { productId: selectedItem.productId, orderId: selectedItem.orderId } })}
+                disabled={Boolean(selectedItem.reviewed)}
+              >
+                <Text style={styles.miniButtonText}>{selectedItem.reviewed ? 'Reviewed' : 'To Review'}</Text>
+              </TouchableOpacity>
+            ) : null}
+
             <View style={styles.detailCard}>
-              <Text style={styles.sectionTitle}>Order Details</Text>
+              <Text style={styles.sectionTitle}>{t('Order Details')}</Text>
               <View style={styles.detailGrid}>
                 {[
                   { icon: 'calendar-outline' as const, label: 'Delivery', value: formatDate(selectedHead.expectedDeliveryAt) },
-                  { icon: 'git-branch-outline' as const, label: 'Tracking ID', value: selectedHead.trackingNumber || selectedHead.orderId.slice(0, 13).toUpperCase() },
+                  { icon: 'git-branch-outline' as const, label: 'Tracking ID', value: selectedHead.trackingNumber || 'Not available yet' },
                   { icon: 'card-outline' as const, label: 'Payment', value: selectedHead.paymentMethod || 'GCash' },
                   { icon: 'location-outline' as const, label: 'Ship To', value: selectedHead.shippingAddress || 'Saved customer address' },
                 ].map((detail) => (
@@ -359,13 +380,16 @@ export default function OrdersScreen() {
               </View>
             </View>
 
+            {selectedHead.status.toLowerCase().includes('transit') ? <View style={styles.trackingCard}><Text style={styles.sectionTitle}>In Transit</Text><Text style={styles.trackingText}>Tracking ID: {selectedHead.trackingNumber || 'Not available yet'}</Text>{selectedHead.trackingUrl ? <TouchableOpacity onPress={() => Linking.openURL(selectedHead.trackingUrl!)}><Text style={styles.trackingLink}>Open tracking link</Text></TouchableOpacity> : null}</View> : null}
+
             <View style={styles.statusCard}>
-              <Text style={styles.statusTitle}>Order Status</Text>
+              <Text style={styles.statusTitle}>{t('Order Status')}</Text>
               {[
                 ['Order Placed', selectedHead.placedAt],
                 ['Order Confirmed', selectedHead.updatedAt],
                 ['Order Processed', selectedHead.updatedAt],
                 ['Ready to Ship', selectedHead.expectedDeliveryAt],
+                ['In Transit', selectedHead.updatedAt],
                 ['Delivered', selectedHead.expectedDeliveryAt],
               ].map(([label, date], index) => {
                 const complete = timelineStatus(selectedHead.status) >= index + 1;
@@ -374,10 +398,10 @@ export default function OrdersScreen() {
                     <View style={[styles.timelineDot, complete && styles.timelineDotComplete]}>
                       <Ionicons name="checkmark" size={13} color={complete ? Colors.text.primary : Colors.text.muted} />
                     </View>
-                    {index < 4 ? <View style={[styles.timelineLine, complete && styles.timelineLineComplete]} /> : null}
+                    {index < 5 ? <View style={[styles.timelineLine, complete && styles.timelineLineComplete]} /> : null}
                     <View style={styles.timelineTextWrap}>
                       <Text style={styles.timelineHint}>
-                        {index === 0 ? 'We have placed your order' : index === 4 ? 'We have delivered your order' : 'We have updated your order'}
+                        {index === 0 ? 'We have placed your order' : index === 5 ? 'We have delivered your order' : 'We have updated your order'}
                       </Text>
                       <Text style={styles.timelineLabel}>{label}</Text>
                       <Text style={styles.timelineDate}>{formatDate(date)}</Text>
@@ -388,7 +412,7 @@ export default function OrdersScreen() {
             </View>
 
             <View style={styles.itemsCard}>
-              <Text style={styles.sectionTitle}>Ordered Items</Text>
+              <Text style={styles.sectionTitle}>{t('Ordered Items')}</Text>
               {selectedOrder.map((item) => (
                 <TouchableOpacity
                   key={item.orderItemId}
@@ -422,6 +446,11 @@ export default function OrdersScreen() {
                       </>
                     )}
                   </TouchableOpacity>
+                  {normalizeStatus(selectedHead.status) !== 'Active' ? (
+                    <TouchableOpacity style={[styles.miniButton, Boolean(item.reviewed) && styles.miniButtonMuted]} onPress={() => !item.reviewed && router.push({ pathname: '/(tabs)/reviews', params: { productId: item.productId, orderId: item.orderId } })} disabled={Boolean(item.reviewed)}>
+                      <Text style={styles.miniButtonText}>{item.reviewed ? 'Reviewed' : 'To Review'}</Text>
+                    </TouchableOpacity>
+                  ) : null}
                 </TouchableOpacity>
               ))}
             </View>
@@ -496,6 +525,13 @@ const styles = StyleSheet.create({
     borderColor: Colors.border.default,
   },
   orderImage: { width: 72, height: 72, borderRadius: Radius.sm, backgroundColor: '#EDF4FD' },
+  singleOrderImage: { width: '100%', height: '100%', borderRadius: Radius.sm, resizeMode: 'contain' },
+  orderImageGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 1, overflow: 'hidden' },
+  orderImageTile: { width: 35, height: 35, backgroundColor: '#EDF4FD' },
+  orderImageTileTwo: { width: 35, height: 72 },
+  orderImagePlaceholder: { alignItems: 'center', justifyContent: 'center' },
+  moreItems: { alignItems: 'center', backgroundColor: 'rgba(8,45,92,.80)', bottom: 0, justifyContent: 'center', position: 'absolute', right: 0, width: 27, height: 27, borderTopLeftRadius: Radius.sm },
+  moreItemsText: { color: Colors.white, fontSize: 10, fontWeight: '900' },
   orderInfo: { flex: 1, justifyContent: 'center' },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
   orderName: { flex: 1, color: Colors.text.primary, fontSize: FontSize.base, fontWeight: '900' },
@@ -537,6 +573,9 @@ const styles = StyleSheet.create({
   trackImage: { width: 82, height: 82, borderRadius: Radius.sm, backgroundColor: '#EDF4FD' },
   trackProductInfo: { flex: 1, justifyContent: 'center' },
   trackPrice: { color: Colors.text.primary, fontSize: FontSize.base, fontWeight: '900', marginTop: Spacing.xs },
+  trackingCard: { borderRadius: Radius.md, padding: Spacing.md, backgroundColor: '#EAF4FF', borderWidth: 1, borderColor: Colors.border.default },
+  trackingText: { color: Colors.text.primary, fontSize: FontSize.sm },
+  trackingLink: { color: Colors.brand.blue, fontSize: FontSize.sm, fontWeight: '900', marginTop: Spacing.sm, textDecorationLine: 'underline' },
   itemPickerCard: {
     borderRadius: Radius.md,
     padding: Spacing.md,

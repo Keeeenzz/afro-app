@@ -15,7 +15,10 @@
       "backgroundColor": "#000000"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "A'FRO uses your location to fill in your delivery address."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -28,7 +31,9 @@
       "expo-router",
       "expo-font",
       "expo-status-bar",
-      "expo-splash-screen"
+      "expo-splash-screen",
+      "expo-notifications",
+      "expo-location"
     ]
   }
 }

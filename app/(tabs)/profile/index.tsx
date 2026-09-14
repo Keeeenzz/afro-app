@@ -18,6 +18,7 @@ import { SavedTab } from '@/components/profile/saved';
 import { StyleTab } from '@/components/profile/style';
 import { apiGet } from '@/lib/api';
 import { useNav } from '@/context/NavContext';
+import { useTranslation } from '@/lib/i18n';
 
 type Tab = 'Info' | 'Orders' | 'Saved' | 'Style';
 
@@ -25,12 +26,14 @@ export default function ProfileScreen() {
   const { user, token } = useAuthStore();
   const router = useRouter();
   const { openNav } = useNav();
-  const params = useLocalSearchParams<{ tab?: string }>();
+  const params = useLocalSearchParams<{ tab?: string; fromSettings?: string }>();
   const [activeTab, setActiveTab] = useState<Tab>('Info');
   const [summary, setSummary] = useState({ orders: 0, saved: 0, reviews: 0 });
   const tabs: Tab[] = ['Info', 'Orders', 'Saved', 'Style'];
-  const idNumber = user?.id_number ?? user?.idNumber;
-  const isVerified = !!idNumber?.trim();
+  // Registration is gated by verified email and SMS. Government-ID upload is
+  // no longer an account-verification requirement.
+  const isVerified = Boolean(user?.user_id);
+  const { t } = useTranslation();
 
   useEffect(() => {
     if (!user?.user_id) return;
@@ -63,8 +66,8 @@ return (
     </TouchableOpacity>
   </View>
   <View style={styles.pageTitleRow}>
-    <TouchableOpacity style={styles.backButton} onPress={() => router.back()}><Ionicons name="arrow-back" size={25} color={Colors.text.primary} /></TouchableOpacity>
-    <Text style={styles.pageTitle}>Profile</Text>
+    <TouchableOpacity style={styles.backButton} onPress={() => params.fromSettings ? router.replace('/(tabs)/settings') : router.back()}><Ionicons name="arrow-back" size={25} color={Colors.text.primary} /></TouchableOpacity>
+    <Text style={styles.pageTitle}>{t('Profile')}</Text>
     <View style={styles.backButton} />
   </View>
   <View style={styles.headerCard}>
@@ -86,11 +89,11 @@ return (
             activeOpacity={0.75}
             onPress={() => router.push('/(auth)/upload-id')}
           >
-            <Text style={styles.verifyLink}>Verify Email</Text>
+            <Text style={styles.verifyLink}>{t('Verify Account')}</Text>
           </TouchableOpacity>
         ) : null}
         <View style={styles.badge}>
-          <Text style={styles.badgeText}>{isVerified ? 'Verified' : 'Unverified'}</Text>
+          <Text style={styles.badgeText}>{t(isVerified ? 'Verified' : 'Unverified')}</Text>
         </View>
       </View>
 
@@ -122,7 +125,7 @@ return (
             onPress={() => setActiveTab(tab)}
           >
             <Text style={[styles.tabPillText, activeTab === tab && styles.tabPillTextActive]}>
-              {tab}
+              {t(tab)}
             </Text>
           </TouchableOpacity>
         ))}
