@@ -265,10 +265,10 @@ export default function ProductOverviewScreen() {
           <Ionicons name="chevron-back" size={27} color={Colors.text.primary} />
         </TouchableOpacity>
 
-        <View style={styles.brandLockup}>
+        <TouchableOpacity style={styles.brandLockup} onPress={() => router.replace('/(tabs)/catalog')} accessibilityRole="button" accessibilityLabel="Go to catalog">
           <Image source={require('@/assets/afro-logo-black.png')} style={styles.headerLogo} resizeMode="contain" />
           <Text style={styles.brand}>A'FRO</Text>
-        </View>
+        </TouchableOpacity>
 
         <TouchableOpacity
           style={styles.headerIcon}

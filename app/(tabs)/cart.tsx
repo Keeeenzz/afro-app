@@ -4,6 +4,7 @@ import {
   Alert,
   Image,
   ImageBackground,
+  Modal,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -16,7 +17,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { apiDelete, apiGet, apiPost, apiPostForm, imageUrl } from '@/lib/api';
+import { ApiError, apiDelete, apiGet, apiPost, apiPostForm, imageUrl } from '@/lib/api';
 import { Colors, FontSize, Radius, Spacing } from '@/constants/theme';
 import { useAuthStore, type AuthUser } from '@/hooks/useAuthStore';
 import { useNav } from '@/context/NavContext';
@@ -45,8 +46,31 @@ type ShippingEvaluation = {
   totalWeightKg?: number;
   totalBulkUnits?: number;
   packageLabel?: string;
+  parcelCount?: number;
+  shippingFeePerParcel?: number;
   shippingFee?: number;
   destinationProvince?: string;
+};
+
+type Voucher = {
+  id: string;
+  code: string;
+  discountType: 'percentage' | 'fixed';
+  discountAmount: number;
+  minimumOrderAmount: number;
+  estimatedDiscount: number;
+};
+
+type AppliedVoucher = {
+  code: string;
+  discountAmount: number;
+};
+
+type ParcelConfirmation = {
+  parcelCount: number;
+  shippingFeePerParcel: number;
+  shippingFee: number;
+  source: 'checkout' | 'placeOrder';
 };
 
 function peso(value: number) {
@@ -85,6 +109,12 @@ export default function CartScreen() {
   const [createdOrderImages, setCreatedOrderImages] = useState<string[]>([]);
   const [shippingEvaluation, setShippingEvaluation] = useState<ShippingEvaluation | null>(null);
   const [shippingLoading, setShippingLoading] = useState(false);
+  const [vouchers, setVouchers] = useState<Voucher[]>([]);
+  const [voucherCode, setVoucherCode] = useState('');
+  const [appliedVoucher, setAppliedVoucher] = useState<AppliedVoucher | null>(null);
+  const [voucherLoading, setVoucherLoading] = useState(false);
+  const [parcelConfirmation, setParcelConfirmation] = useState<ParcelConfirmation | null>(null);
+  const [acknowledgedParcelCount, setAcknowledgedParcelCount] = useState<number | null>(null);
 
   const loadCart = useCallback(async () => {
     if (!user?.user_id) {
@@ -121,7 +151,8 @@ export default function CartScreen() {
     0,
   );
   const shipping = shippingEvaluation?.allowed ? Number(shippingEvaluation.shippingFee ?? 0) : 0;
-  const total = subtotal + shipping;
+  const voucherDiscount = Number(appliedVoucher?.discountAmount ?? 0);
+  const total = subtotal - voucherDiscount + shipping;
   const fullAddress = getAddress(user);
 
   const refresh = async () => {
@@ -137,6 +168,9 @@ export default function CartScreen() {
 
   const toggleItem = (id: string) => {
     setShippingEvaluation(null);
+    setAcknowledgedParcelCount(null);
+    setAppliedVoucher(null);
+    setVoucherCode('');
     setSelectedIds((current) => {
       const next = new Set(current);
       if (next.has(id)) next.delete(id);
@@ -148,6 +182,9 @@ export default function CartScreen() {
   const removeItem = async (item: CartItem) => {
     if (!user?.user_id) return;
     setShippingEvaluation(null);
+    setAcknowledgedParcelCount(null);
+    setAppliedVoucher(null);
+    setVoucherCode('');
     const previousItems = items;
     setItems((current) => current.filter((currentItem) => currentItem.cartItemId !== item.cartItemId));
     setSelectedIds((current) => {
@@ -168,10 +205,10 @@ export default function CartScreen() {
     router.push({ pathname: '/(tabs)/product/[id]', params: { id: item.productId, from: 'cart' } });
   };
 
-  const evaluateShipping = async () => {
+  const evaluateShipping = async (): Promise<ShippingEvaluation | null> => {
     if (!user?.user_id || !selectedItems.length) {
       Alert.alert('Choose items', 'Select at least one product to checkout.');
-      return false;
+      return null;
     }
 
     setShippingLoading(true);
@@ -184,21 +221,71 @@ export default function CartScreen() {
       setShippingEvaluation(evaluation);
       if (!evaluation.allowed) {
         Alert.alert('Shipping unavailable', evaluation.message ?? 'The selected items cannot be shipped.');
-        return false;
+        return null;
       }
-      return true;
+      return evaluation;
     } catch (shippingError) {
       const message = shippingError instanceof Error ? shippingError.message : 'Could not calculate shipping. Please try again.';
       setShippingEvaluation(null);
       Alert.alert('Shipping unavailable', message);
-      return false;
+      return null;
     } finally {
       setShippingLoading(false);
     }
   };
 
   const beginCheckout = async () => {
-    if (await evaluateShipping()) setStep('checkout');
+    const evaluation = await evaluateShipping();
+    if (!evaluation) return;
+    if (Number(evaluation.parcelCount ?? 1) > 1) {
+      setParcelConfirmation({
+        parcelCount: Number(evaluation.parcelCount),
+        shippingFeePerParcel: Number(evaluation.shippingFeePerParcel),
+        shippingFee: Number(evaluation.shippingFee),
+        source: 'checkout',
+      });
+      return;
+    }
+    setStep('checkout');
+    void loadVouchers();
+  };
+
+  const loadVouchers = async () => {
+    if (!user?.user_id || !selectedItems.length) return;
+    setVoucherLoading(true);
+    try {
+      const cartItemIds = encodeURIComponent(JSON.stringify(selectedItems.map((item) => item.cartItemId)));
+      const available = await apiGet<Voucher[]>(`/cart/${user.user_id}/vouchers?selectedCartItemIds=${cartItemIds}`, token);
+      setVouchers(available);
+    } catch {
+      setVouchers([]);
+    } finally {
+      setVoucherLoading(false);
+    }
+  };
+
+  const applyVoucher = async (code = voucherCode) => {
+    if (!user?.user_id || !code.trim()) return;
+    setVoucherLoading(true);
+    try {
+      const result = await apiPost<{ code: string; discountAmount: number }>('/cart/voucher/evaluate', {
+        userId: user.user_id,
+        voucherCode: code.trim(),
+        selectedCartItemIds: selectedItems.map((item) => item.cartItemId),
+      }, token);
+      setAppliedVoucher({ code: result.code, discountAmount: Number(result.discountAmount) });
+      setVoucherCode(result.code);
+    } catch (err) {
+      Alert.alert('Voucher unavailable', err instanceof Error ? err.message : 'This voucher cannot be applied to your order.');
+      setAppliedVoucher(null);
+    } finally {
+      setVoucherLoading(false);
+    }
+  };
+
+  const removeVoucher = () => {
+    setAppliedVoucher(null);
+    setVoucherCode('');
   };
 
   const chooseReceipt = async () => {
@@ -212,7 +299,7 @@ export default function CartScreen() {
     }
   };
 
-  const placeOrder = async () => {
+  const placeOrder = async (acknowledgedParcelCountOverride?: number) => {
     if (!user?.user_id) {
       Alert.alert('Login required', 'Please login before checking out.');
       return;
@@ -247,6 +334,9 @@ export default function CartScreen() {
     form.append('province', user.address_province || 'Metro Manila');
     form.append('region', 'NCR');
     form.append('postalCode', user.address_zip || '');
+    if (appliedVoucher?.code) form.append('voucherCode', appliedVoucher.code);
+    const acknowledgedCount = acknowledgedParcelCountOverride ?? acknowledgedParcelCount;
+    if (acknowledgedCount) form.append('acknowledgedParcelCount', String(acknowledgedCount));
     form.append('receipt', {
       uri: receipt.uri,
       name: receipt.fileName || `gcash-receipt-${Date.now()}.jpg`,
@@ -265,11 +355,39 @@ export default function CartScreen() {
       setReceipt(null);
       await loadCart();
     } catch (err) {
+      if (err instanceof ApiError && err.data?.code === 'MULTIPLE_PARCELS_CONFIRMATION_REQUIRED') {
+        const parcelCount = Number(err.data.parcelCount);
+        const shippingFeePerParcel = Number(err.data.shippingFeePerParcel);
+        const shippingFee = Number(err.data.shippingFee);
+        if (Number.isFinite(parcelCount) && parcelCount > 1 && Number.isFinite(shippingFeePerParcel) && Number.isFinite(shippingFee)) {
+          setParcelConfirmation({ parcelCount, shippingFeePerParcel, shippingFee, source: 'placeOrder' });
+          return;
+        }
+      }
       const message = err instanceof Error ? err.message : 'Please try again.';
       Alert.alert('Could not place order', message);
     } finally {
       setPlacing(false);
     }
+  };
+
+  const continueWithMultipleParcels = () => {
+    const confirmation = parcelConfirmation;
+    if (!confirmation) return;
+    setParcelConfirmation(null);
+    setAcknowledgedParcelCount(confirmation.parcelCount);
+    if (confirmation.source === 'checkout') {
+      setStep('checkout');
+      void loadVouchers();
+      return;
+    }
+    void placeOrder(confirmation.parcelCount);
+  };
+
+  const reduceItems = () => {
+    setParcelConfirmation(null);
+    setAcknowledgedParcelCount(null);
+    setStep('cart');
   };
 
   const leaveConfirmation = (route: '/(tabs)/orders' | '/(tabs)/catalog') => {
@@ -294,7 +412,7 @@ export default function CartScreen() {
   return (
     <ImageBackground source={require('@/assets/afro-logo-black.png')} style={styles.screen} imageStyle={styles.bgImage}>
       <View style={styles.overlay}>
-        <Header onMenu={openNav} />
+        <Header onMenu={openNav} onHome={() => router.replace('/(tabs)/catalog')} />
 
         {step !== 'confirmed' ? (
           <View style={styles.titleRow}>
@@ -347,6 +465,13 @@ export default function CartScreen() {
             )}
 
             <SummaryCard subtotal={subtotal} shipping={0} total={subtotal} showShipping={false} itemCount={selectedItems.length} />
+            {shippingEvaluation?.allowed && Number(shippingEvaluation.parcelCount ?? 1) > 1 ? (
+              <ParcelWarning
+                parcelCount={Number(shippingEvaluation.parcelCount)}
+                shippingFeePerParcel={Number(shippingEvaluation.shippingFeePerParcel)}
+                shippingFee={Number(shippingEvaluation.shippingFee)}
+              />
+            ) : null}
             <TouchableOpacity
               style={[styles.primaryButton, (!selectedItems.length || shippingLoading) && styles.disabled]}
               disabled={!selectedItems.length || shippingLoading}
@@ -362,7 +487,8 @@ export default function CartScreen() {
             <ProgressBars active={1} />
             <AddressPanel user={user} address={fullAddress} />
             <PaymentPanel />
-            <SummaryCard subtotal={subtotal} shipping={shipping} total={total} showShipping itemCount={selectedItems.length} />
+            <VoucherPanel vouchers={vouchers} loading={voucherLoading} code={voucherCode} appliedVoucher={appliedVoucher} onCodeChange={setVoucherCode} onApply={applyVoucher} onRemove={removeVoucher} />
+            <SummaryCard subtotal={subtotal} shipping={shipping} discount={voucherDiscount} total={total} showShipping itemCount={selectedItems.length} />
             <TouchableOpacity style={styles.primaryButton} onPress={() => setStep('receipt')}>
               <Text style={styles.primaryText}>Continue</Text>
             </TouchableOpacity>
@@ -374,7 +500,8 @@ export default function CartScreen() {
             <ProgressBars active={2} />
             <AddressPanel user={user} address={fullAddress} />
             <PaymentPanel />
-            <SummaryCard subtotal={subtotal} shipping={shipping} total={total} showShipping itemCount={selectedItems.length} />
+            <VoucherPanel vouchers={vouchers} loading={voucherLoading} code={voucherCode} appliedVoucher={appliedVoucher} onCodeChange={setVoucherCode} onApply={applyVoucher} onRemove={removeVoucher} />
+            <SummaryCard subtotal={subtotal} shipping={shipping} discount={voucherDiscount} total={total} showShipping itemCount={selectedItems.length} />
             <Panel icon="receipt" title="Upload Receipt">
               <Image source={require('@/assets/gcash-qr.png')} style={styles.qrImage} resizeMode="contain" />
               <Text style={styles.gcashNumber}>GCash Number: {GCASH_NUMBER}</Text>
@@ -398,7 +525,7 @@ export default function CartScreen() {
                 keyboardType="number-pad"
               />
             </Panel>
-            <TouchableOpacity style={[styles.primaryButton, placing && styles.disabled]} onPress={placeOrder} disabled={placing}>
+            <TouchableOpacity style={[styles.primaryButton, placing && styles.disabled]} onPress={() => void placeOrder()} disabled={placing}>
               {placing ? <ActivityIndicator color={Colors.white} /> : <Text style={styles.primaryText}>Place Order</Text>}
             </TouchableOpacity>
           </ScrollView>
@@ -442,18 +569,38 @@ export default function CartScreen() {
             </TouchableOpacity>
           </View>
         )}
+
+        <Modal visible={Boolean(parcelConfirmation)} transparent animationType="fade" onRequestClose={() => undefined}>
+          <View style={styles.modalOverlay}>
+            <View style={styles.parcelModal}>
+              <Text style={styles.parcelModalTitle}>Multiple Parcels Required</Text>
+              <Text style={styles.parcelModalText}>Your selected items don't fit in one parcel.</Text>
+              <Text style={styles.parcelModalText}>This order will be shipped in {parcelConfirmation?.parcelCount} parcels.</Text>
+              <Text style={styles.parcelModalShipping}>{peso(parcelConfirmation?.shippingFeePerParcel ?? 0)} per parcel × {parcelConfirmation?.parcelCount} = {peso(parcelConfirmation?.shippingFee ?? 0)} total shipping</Text>
+              <Text style={styles.parcelModalText}>Continue with {parcelConfirmation?.parcelCount} parcels or reduce your selected items?</Text>
+              <View style={styles.parcelModalActions}>
+                <TouchableOpacity style={styles.reduceItemsButton} onPress={reduceItems}>
+                  <Text style={styles.reduceItemsText}>Reduce Items</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.continueParcelsButton} onPress={continueWithMultipleParcels}>
+                  <Text style={styles.primaryText}>Continue with {parcelConfirmation?.parcelCount} Parcels</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
       </View>
     </ImageBackground>
   );
 }
 
-function Header({ onMenu }: { onMenu: () => void }) {
+function Header({ onMenu, onHome }: { onMenu: () => void; onHome: () => void }) {
   return (
     <View style={styles.header}>
-      <View style={styles.brandLockup}>
+      <TouchableOpacity style={styles.brandLockup} onPress={onHome} accessibilityRole="button" accessibilityLabel="Go to catalog">
         <Image source={require('@/assets/afro-logo-black.png')} style={styles.logo} resizeMode="contain" />
         <Text style={styles.brand}>A'FRO</Text>
-      </View>
+      </TouchableOpacity>
       <TouchableOpacity onPress={onMenu} style={styles.headerIcon}>
         <Ionicons name="menu-outline" size={28} color={Colors.brand.blue} />
       </TouchableOpacity>
@@ -490,6 +637,78 @@ function PaymentPanel() {
         <Text style={styles.paymentText}>GCash</Text>
         <Ionicons name="radio-button-on" size={20} color={Colors.brand.blueLight} />
       </View>
+    </Panel>
+  );
+}
+
+function ParcelWarning({ parcelCount, shippingFeePerParcel, shippingFee }: Omit<ParcelConfirmation, 'source'>) {
+  return (
+    <View style={styles.parcelWarning}>
+      <Ionicons name="warning-outline" size={20} color="#8A5A00" />
+      <View style={styles.parcelWarningCopy}>
+        <Text style={styles.parcelWarningTitle}>Multiple parcels required</Text>
+        <Text style={styles.parcelWarningText}>Your selected items need {parcelCount} parcels.</Text>
+        <Text style={styles.parcelWarningText}>Shipping: {peso(shippingFeePerParcel)} × {parcelCount} = {peso(shippingFee)}</Text>
+      </View>
+    </View>
+  );
+}
+
+function VoucherPanel({
+  vouchers, loading, code, appliedVoucher, onCodeChange, onApply, onRemove,
+}: {
+  vouchers: Voucher[];
+  loading: boolean;
+  code: string;
+  appliedVoucher: AppliedVoucher | null;
+  onCodeChange: (value: string) => void;
+  onApply: (code?: string) => void;
+  onRemove: () => void;
+}) {
+  return (
+    <Panel icon="pricetag" title="Voucher" rightText={loading ? 'Loading…' : undefined}>
+      {appliedVoucher ? (
+        <View style={styles.appliedVoucher}>
+          <View>
+            <Text style={styles.appliedVoucherCode}>{appliedVoucher.code}</Text>
+            <Text style={styles.appliedVoucherText}>Discount applied: {peso(appliedVoucher.discountAmount)}</Text>
+          </View>
+          <TouchableOpacity onPress={onRemove}><Text style={styles.removeVoucherText}>Remove</Text></TouchableOpacity>
+        </View>
+      ) : (
+        <>
+          <View style={styles.voucherEntry}>
+            <TextInput
+              style={styles.voucherInput}
+              value={code}
+              onChangeText={onCodeChange}
+              autoCapitalize="characters"
+              placeholder="Enter voucher code"
+              placeholderTextColor={Colors.text.muted}
+            />
+            <TouchableOpacity style={styles.applyVoucherButton} onPress={() => onApply()} disabled={loading || !code.trim()}>
+              <Text style={styles.applyVoucherText}>Apply</Text>
+            </TouchableOpacity>
+          </View>
+          {vouchers.length ? (
+            <View style={styles.voucherList}>
+              <Text style={styles.availableVoucherLabel}>Available vouchers</Text>
+              {vouchers.map((voucher) => (
+                <TouchableOpacity key={voucher.id} style={styles.voucherOption} onPress={() => onApply(voucher.code)} disabled={loading}>
+                  <View>
+                    <Text style={styles.voucherOptionCode}>{voucher.code}</Text>
+                    <Text style={styles.voucherOptionText}>
+                      {voucher.discountType === 'percentage' ? `${voucher.discountAmount}% off` : `${peso(voucher.discountAmount)} off`}
+                      {voucher.minimumOrderAmount > 0 ? ` · min. ${peso(voucher.minimumOrderAmount)}` : ''}
+                    </Text>
+                  </View>
+                  <Text style={styles.voucherOptionSave}>Save {peso(voucher.estimatedDiscount)}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          ) : !loading ? <Text style={styles.noVoucherText}>No vouchers are currently available for these items.</Text> : null}
+        </>
+      )}
     </Panel>
   );
 }
@@ -532,12 +751,14 @@ function Panel({
 function SummaryCard({
   subtotal,
   shipping,
+  discount = 0,
   total,
   showShipping,
   itemCount,
 }: {
   subtotal: number;
   shipping: number;
+  discount?: number;
   total: number;
   showShipping: boolean;
   itemCount: number;
@@ -554,10 +775,18 @@ function SummaryCard({
         <Text style={styles.summaryValue}>{peso(subtotal)}</Text>
       </View>
       {showShipping ? (
+        <>
+          {discount > 0 ? (
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}>Voucher discount</Text>
+              <Text style={styles.discountValue}>−{peso(discount)}</Text>
+            </View>
+          ) : null}
         <View style={styles.summaryRow}>
           <Text style={styles.summaryLabel}>Shipping Fee</Text>
           <Text style={styles.summaryValue}>{peso(shipping)}</Text>
         </View>
+        </>
       ) : null}
       <View style={styles.summaryTotalRow}>
         <Text style={styles.summaryTotalLabel}>Total{showShipping ? ' Payment' : ''}</Text>
@@ -636,6 +865,7 @@ const styles = StyleSheet.create({
   summaryRow: { minHeight: 25, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   summaryLabel: { color: Colors.text.primary, fontSize: FontSize.xs, fontWeight: '700' },
   summaryValue: { color: Colors.text.primary, fontSize: FontSize.xs, fontWeight: '900' },
+  discountValue: { color: '#12733E', fontSize: FontSize.xs, fontWeight: '900' },
   summaryTotalRow: {
     borderTopWidth: 1,
     borderTopColor: 'rgba(221, 241, 255, 0.25)',
@@ -702,6 +932,21 @@ const styles = StyleSheet.create({
   paymentIcon: { width: 24, height: 24, borderRadius: 5, alignItems: 'center', justifyContent: 'center', backgroundColor: '#BCEBFF' },
   paymentLetter: { color: '#1466A4', fontSize: FontSize.base, fontWeight: '900' },
   paymentText: { flex: 1, color: Colors.text.primary, fontSize: FontSize.sm, fontWeight: '800' },
+  voucherEntry: { flexDirection: 'row', gap: Spacing.sm, alignItems: 'center' },
+  voucherInput: { flex: 1, height: 42, borderRadius: Radius.sm, borderWidth: 1, borderColor: '#8FA9C8', color: Colors.text.primary, paddingHorizontal: Spacing.sm, fontSize: FontSize.sm },
+  applyVoucherButton: { height: 42, borderRadius: Radius.sm, backgroundColor: Colors.brand.blue, paddingHorizontal: Spacing.md, alignItems: 'center', justifyContent: 'center' },
+  applyVoucherText: { color: Colors.white, fontSize: FontSize.xs, fontWeight: '900' },
+  voucherList: { marginTop: Spacing.md, gap: Spacing.xs },
+  availableVoucherLabel: { color: Colors.text.secondary, fontSize: 10, fontWeight: '800', textTransform: 'uppercase' },
+  voucherOption: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: Spacing.sm, borderRadius: Radius.sm, backgroundColor: '#EDF5FF', borderWidth: 1, borderColor: '#D6E6F8' },
+  voucherOptionCode: { color: Colors.brand.blue, fontSize: FontSize.xs, fontWeight: '900' },
+  voucherOptionText: { color: Colors.text.secondary, fontSize: 10, marginTop: 2 },
+  voucherOptionSave: { color: '#12733E', fontSize: 10, fontWeight: '900' },
+  noVoucherText: { color: Colors.text.secondary, fontSize: 10, marginTop: Spacing.sm },
+  appliedVoucher: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: Spacing.sm, borderRadius: Radius.sm, backgroundColor: '#E8F8ED' },
+  appliedVoucherCode: { color: '#146C36', fontSize: FontSize.sm, fontWeight: '900' },
+  appliedVoucherText: { color: '#28774A', fontSize: 10, marginTop: 2 },
+  removeVoucherText: { color: Colors.brand.blue, fontSize: FontSize.xs, fontWeight: '900' },
   qrImage: { alignSelf: 'center', width: 160, height: 210, marginBottom: Spacing.sm, backgroundColor: Colors.white },
   gcashNumber: { color: Colors.text.primary, fontSize: FontSize.xs, fontWeight: '900', marginBottom: Spacing.sm },
   uploadBox: {
@@ -756,4 +1001,17 @@ const styles = StyleSheet.create({
   emptyTitle: { color: Colors.text.primary, fontSize: FontSize.base, fontWeight: '900', marginTop: Spacing.sm },
   emptyText: { color: Colors.text.secondary, fontSize: FontSize.sm, textAlign: 'center', marginTop: Spacing.xs },
   error: { color: Colors.status.error, fontSize: FontSize.sm, textAlign: 'center' },
+  parcelWarning: { flexDirection: 'row', gap: Spacing.sm, borderRadius: Radius.md, padding: Spacing.md, backgroundColor: '#FFF4D6', borderWidth: 1, borderColor: '#E6BF67' },
+  parcelWarningCopy: { flex: 1 },
+  parcelWarningTitle: { color: '#714800', fontSize: FontSize.sm, fontWeight: '900', marginBottom: 3 },
+  parcelWarningText: { color: '#714800', fontSize: FontSize.xs, lineHeight: 18 },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(8, 20, 36, 0.7)', alignItems: 'center', justifyContent: 'center', padding: Spacing.lg },
+  parcelModal: { width: '100%', maxWidth: 420, borderRadius: Radius.lg, padding: Spacing.lg, backgroundColor: Colors.white, borderWidth: 1, borderColor: '#B8D9EE' },
+  parcelModalTitle: { color: Colors.brand.blue, fontSize: FontSize.lg, fontWeight: '900', marginBottom: Spacing.sm },
+  parcelModalText: { color: Colors.text.primary, fontSize: FontSize.sm, lineHeight: 21, marginBottom: Spacing.xs },
+  parcelModalShipping: { color: Colors.brand.blue, fontSize: FontSize.base, fontWeight: '900', lineHeight: 22, marginVertical: Spacing.sm },
+  parcelModalActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: Spacing.sm, marginTop: Spacing.md },
+  reduceItemsButton: { minHeight: 42, paddingHorizontal: Spacing.md, borderRadius: Radius.full, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#8FA9C8', backgroundColor: '#EEF4F9' },
+  reduceItemsText: { color: Colors.brand.blue, fontSize: FontSize.sm, fontWeight: '900' },
+  continueParcelsButton: { minHeight: 42, paddingHorizontal: Spacing.lg, borderRadius: Radius.full, alignItems: 'center', justifyContent: 'center', backgroundColor: '#164E67', borderWidth: 1, borderColor: '#61C4E6' },
 });

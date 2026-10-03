@@ -1,11 +1,9 @@
-import { Platform } from 'react-native';
+const configuredBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL?.trim().replace(/\/$/, '');
 
-const defaultBaseUrl = Platform.select({
-  android: 'http://10.0.2.2:5000/api',
-  default: 'http://localhost:5000/api',
-});
-
-export const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL ?? defaultBaseUrl;
+// A physical device cannot reach its development machine through localhost.
+// Keep the host entirely environment-driven: development builds must define
+// EXPO_PUBLIC_API_BASE_URL to a LAN hostname/IP or a tunnel URL.
+export const API_BASE_URL = configuredBaseUrl ?? '';
 
 type ApiOptions = {
   method?: string;
@@ -14,20 +12,47 @@ type ApiOptions = {
   signal?: AbortSignal;
 };
 
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+    public readonly data: Record<string, unknown> | null,
+  ) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+
 export async function apiRequest<T>(path: string, options: ApiOptions = {}): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    method: options.method ?? 'GET',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(options.token ? { Authorization: `Bearer ${options.token}` } : {}),
-    },
-    body: options.body === undefined ? undefined : JSON.stringify(options.body),
-    signal: options.signal,
-  });
+  if (!API_BASE_URL) {
+    throw new Error('The app server address is not configured. Set EXPO_PUBLIC_API_BASE_URL and reload the app.');
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, {
+      method: options.method ?? 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(options.token ? { Authorization: `Bearer ${options.token}` } : {}),
+      },
+      body: options.body === undefined ? undefined : JSON.stringify(options.body),
+      signal: options.signal,
+    });
+  } catch (error) {
+    if (error instanceof Error && (error.name === 'AbortError' || /timed out/i.test(error.message))) {
+      throw new Error('The server took too long to respond. Check your connection and try again.');
+    }
+    throw new Error('Could not reach A\'FRO. Check that the app server is running and your phone can reach it.');
+  }
 
   if (!response.ok) {
-    const error = await response.json().catch(() => null);
-    throw new Error(error?.message ?? `API request failed: ${response.status}`);
+    const error = await response.json().catch(() => null) as Record<string, unknown> | null;
+    throw new ApiError(
+      typeof error?.message === 'string' ? error.message : `API request failed: ${response.status}`,
+      response.status,
+      error,
+    );
   }
 
   return response.json();
@@ -50,6 +75,9 @@ export function apiDelete<T>(path: string, body?: unknown, token?: string | null
 }
 
 export async function apiPostForm<T>(path: string, form: FormData, token?: string | null): Promise<T> {
+  if (!API_BASE_URL) {
+    return Promise.reject(new Error('The app server address is not configured. Set EXPO_PUBLIC_API_BASE_URL and reload the app.'));
+  }
   return new Promise<T>((resolve, reject) => {
     const request = new XMLHttpRequest();
 
@@ -59,7 +87,7 @@ export async function apiPostForm<T>(path: string, form: FormData, token?: strin
     }
 
     request.onload = () => {
-      let data: { message?: string } | T | null = null;
+      let data: Record<string, unknown> | T | null = null;
 
       try {
         data = request.responseText ? JSON.parse(request.responseText) : null;
@@ -69,7 +97,12 @@ export async function apiPostForm<T>(path: string, form: FormData, token?: strin
       }
 
       if (request.status < 200 || request.status >= 300) {
-        reject(new Error((data as { message?: string } | null)?.message ?? `API request failed: ${request.status}`));
+        const error = data as Record<string, unknown> | null;
+        reject(new ApiError(
+          typeof error?.message === 'string' ? error.message : `API request failed: ${request.status}`,
+          request.status,
+          error,
+        ));
         return;
       }
 

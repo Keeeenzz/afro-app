@@ -5,7 +5,29 @@ import { useMemo, useState } from 'react';
 import { SettingsHeader } from '@/components/ui/SettingsHeader';
 import { Colors, FontSize, Radius, Spacing } from '@/constants/theme';
 
-const faqs = [{ group: 'GETTING STARTED', question: 'How do I use AI Try-On?', answer: 'Open Try-On, select a product, upload a clear photo, and follow the on-screen instructions.' }, { group: 'GETTING STARTED', question: 'How do I update my body measurements?', answer: 'Open Profile to update the measurements used for sizing guidance.' }, { group: 'ACCOUNT', question: 'How do I edit my home address?', answer: 'Open Profile, then update your saved delivery address.' }, { group: 'ORDERS', question: 'Where can I view my order?', answer: 'Open My Orders from Settings or the navigation menu to see current status and tracking.' }, { group: 'TROUBLESHOOTING', question: 'AI Try-On is not working', answer: 'Restart the app, check your connection, use a clear image, and try again.' }];
+const faqs = [
+  { group: 'SHOPPING & PRODUCTS', question: 'How do I search for products?', answer: 'Use the search bar on the Catalog page or browse the categories and filters to find what you need.' },
+  { group: 'SHOPPING & PRODUCTS', question: 'How do I view product details?', answer: 'Tap a product to see its photos, price, description, available sizes, and measurements.' },
+  { group: 'SHOPPING & PRODUCTS', question: 'What are pre-loved products?', answer: 'Pre-loved products are second-hand items. Review the product condition and description before buying.' },
+  { group: 'SHOPPING & PRODUCTS', question: 'How do I know if an item is available?', answer: 'Availability is shown on each product page. An item cannot be added when it is out of stock.' },
+  { group: 'SHOPPING & PRODUCTS', question: 'Can I buy multiple products?', answer: 'Yes. Add each product to your cart, then review all items before checkout.' },
+  { group: 'MEASUREMENTS & TRY-ON', question: 'How do I save my measurements?', answer: 'Open your Profile and enter your measurements. They are used to provide better sizing guidance.' },
+  { group: 'MEASUREMENTS & TRY-ON', question: 'Why are measurements automatically filled?', answer: 'Choosing a standard size fills the matching size-standard range as a helpful starting point. You can edit every value.' },
+  { group: 'MEASUREMENTS & TRY-ON', question: 'How do I use AI Try-On?', answer: 'Open Try-On, select a product, upload a clear photo, and follow the on-screen instructions to preview the look.' },
+  { group: 'CART & VOUCHERS', question: 'How do I change or remove items in my cart?', answer: 'Open Cart to update quantities while stock is available or remove items you no longer want.' },
+  { group: 'CART & VOUCHERS', question: 'How do I apply a voucher?', answer: 'During checkout, open the Voucher section, select an eligible voucher, and apply it before placing the order.' },
+  { group: 'CART & VOUCHERS', question: 'Does a voucher reduce shipping?', answer: 'No. Voucher discounts apply only to the product subtotal. Shipping fees remain unchanged.' },
+  { group: 'CART & VOUCHERS', question: 'Why can’t I use a voucher?', answer: 'A voucher may be expired, inactive, fully used, below its minimum order amount, or already unavailable.' },
+  { group: 'PAYMENT', question: 'What payment methods are available?', answer: 'GCash is currently available. Follow the checkout instructions to submit your payment proof.' },
+  { group: 'PAYMENT', question: 'Why is my payment still pending?', answer: 'Payments are verified before an order proceeds. Check that your proof and reference details are complete.' },
+  { group: 'ORDERS', question: 'Where can I view my order status?', answer: 'Open My Orders from Settings or the navigation menu to see the latest order status and tracking information.' },
+  { group: 'ORDERS', question: 'What do the order statuses mean?', answer: 'Orders progress through Order Placed, Confirmed, Processed, Ready to Ship, In Transit, Out for Delivery, and Delivered.' },
+  { group: 'ORDERS', question: 'Where can I find my tracking number?', answer: 'Open the order details. Tracking stays visible after it is added, including after the order is delivered.' },
+  { group: 'REVIEWS', question: 'How do I leave a review?', answer: 'After delivery, open the completed order and choose To Review for the item. You can add a rating, comments, and photos when available.' },
+  { group: 'ACCOUNT & NOTIFICATIONS', question: 'How do I update my profile or address?', answer: 'Open Profile to update your personal details, measurements, and saved delivery address.' },
+  { group: 'ACCOUNT & NOTIFICATIONS', question: 'I forgot my password. What should I do?', answer: 'Use the password recovery option on the sign-in screen, then follow the verification steps.' },
+  { group: 'TROUBLESHOOTING', question: 'I did not receive a notification. What should I do?', answer: 'Check your notification settings and internet connection, then reopen the app. Contact support if the issue continues.' },
+];
 export default function HelpScreen() {
   const router = useRouter(); const [query, setQuery] = useState(''); const [open, setOpen] = useState<string | null>(null);
   const visible = useMemo(() => faqs.filter((item) => `${item.question} ${item.answer}`.toLowerCase().includes(query.toLowerCase())), [query]);

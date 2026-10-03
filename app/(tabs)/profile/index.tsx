@@ -57,10 +57,10 @@ return (
 {/* Profile header - fixed */}
 <View style={styles.profileHeader}>
   <View style={styles.mainHeader}>
-    <View style={styles.brandLockup}>
+    <TouchableOpacity style={styles.brandLockup} onPress={() => router.replace('/(tabs)/catalog')} accessibilityRole="button" accessibilityLabel="Go to catalog">
       <Image source={require('@/assets/afro-logo-black.png')} style={styles.brandLogo} resizeMode="contain" />
       <Text style={styles.brandText}>A'FRO</Text>
-    </View>
+    </TouchableOpacity>
     <TouchableOpacity style={styles.menuButton} onPress={openNav}>
       <Ionicons name="menu-outline" size={28} color={Colors.brand.blue} />
     </TouchableOpacity>

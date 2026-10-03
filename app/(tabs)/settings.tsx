@@ -91,7 +91,7 @@ export default function SettingsScreen() {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <View style={styles.header}><View style={styles.brandLockup}><Image source={require('@/assets/afro-logo-black.png')} style={styles.logo} resizeMode="contain" /><Text style={styles.brand}>A'FRO</Text></View><TouchableOpacity style={styles.menuButton} onPress={openNav}><Ionicons name="menu-outline" size={28} color={Colors.brand.blue} /></TouchableOpacity></View>
+      <View style={styles.header}><TouchableOpacity style={styles.brandLockup} onPress={() => router.replace('/(tabs)/catalog')} accessibilityRole="button" accessibilityLabel="Go to catalog"><Image source={require('@/assets/afro-logo-black.png')} style={styles.logo} resizeMode="contain" /><Text style={styles.brand}>A'FRO</Text></TouchableOpacity><TouchableOpacity style={styles.menuButton} onPress={openNav}><Ionicons name="menu-outline" size={28} color={Colors.brand.blue} /></TouchableOpacity></View>
       <Text style={styles.pageTitle}>{t('Settings')}</Text>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <Section title={t('My Account')}>
@@ -110,6 +110,7 @@ export default function SettingsScreen() {
         </Section>
         <Section title={t('Support')}>
           <SettingsRow label={t('Help & Support')} onPress={() => router.push('/(tabs)/help')} />
+          <SettingsRow label="Terms and Conditions" onPress={() => router.push('/(auth)/terms')} />
           <SettingsRow label={t('About')} detail={`A'FRO version ${version}`} onPress={() => router.push('/(tabs)/about')} />
           <SettingsRow label={t('Request Account Deletion')} detail={t('Deactivate now; permanent removal after 30 days')} onPress={() => setDeletionOpen(true)} />
         </Section>

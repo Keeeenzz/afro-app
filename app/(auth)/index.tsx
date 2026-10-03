@@ -5,6 +5,7 @@ import {
   StyleSheet,
   SafeAreaView,
   Image,
+  TouchableOpacity,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Button } from '@/components/ui/Button';
@@ -41,6 +42,14 @@ export default function SignInPage() {
             style={styles.btnHalf}
           />
         </View>
+        <TouchableOpacity
+          accessibilityRole="link"
+          accessibilityLabel="Terms and Conditions"
+          onPress={() => router.push('/(auth)/terms')}
+          style={styles.termsLink}
+        >
+          <Text style={styles.termsText}>Terms and Conditions</Text>
+        </TouchableOpacity>
       </View>
     </SafeAreaView>
   );
@@ -95,6 +104,18 @@ const styles = StyleSheet.create({
   bottom: {
     paddingHorizontal: Spacing.xl,
     paddingBottom: Spacing['2xl'],
+  },
+  termsLink: {
+    alignSelf: 'center',
+    marginTop: Spacing.md,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.xs,
+  },
+  termsText: {
+    color: Colors.text.link,
+    fontSize: FontSize.sm,
+    fontWeight: '700',
+    textDecorationLine: 'underline',
   },
   actions: {
     flexDirection: 'row',

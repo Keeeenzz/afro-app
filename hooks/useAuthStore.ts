@@ -38,7 +38,6 @@ type Draft = Partial<{
   full_name: string;
   first_name: string;
   last_name: string;
-  alias: string;
   phone: string;
   id_type: string;
   // To this: // id_type_id: number; // id_type_label: string; // keep for display purposes
@@ -51,6 +50,7 @@ type Draft = Partial<{
   address_barangay: string | null;
   address_city: string | null;
   address_province: string | null;
+  address_region: string | null;
   address_zip: string | null;
   fashion_style: string;
   preferred_size: string;

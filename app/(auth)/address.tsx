@@ -99,6 +99,7 @@ export default function AddressPage() {
 
     Object.entries(FIELD_LIMITS).forEach(([field, rule]) => {
       const value = values[field as keyof typeof values].trim();
+      if (field === 'province' && /national capital|\bncr\b/i.test(region)) return;
       if (rule.min > 0 && !value) {
         e[field] = 'Required.';
       } else if (value && value.length < rule.min) {
@@ -143,7 +144,7 @@ export default function AddressPage() {
     const fullAddress = [houseNo, street, barangay, city, province, zip]
       .filter(Boolean)
       .join(', ');
-    setDraft({ shipping_address: fullAddress, address_house_no: houseNo, address_street: street, address_barangay: barangay, address_city: city, address_province: province, address_zip: zip });
+    setDraft({ shipping_address: fullAddress, address_house_no: houseNo, address_street: street, address_barangay: barangay, address_city: city, address_province: province, address_region: region, address_zip: zip });
     router.push('/(auth)/email');
   };
 
@@ -242,7 +243,7 @@ export default function AddressPage() {
           />
           <Input
             label="Province"
-            placeholder="e.g. Metro Manila"
+            placeholder={/national capital|\bncr\b/i.test(region) ? 'Not applicable for NCR' : 'e.g. Cavite'}
             value={province}
             onChangeText={(value) => updateField('province', value)}
             error={errors.province}

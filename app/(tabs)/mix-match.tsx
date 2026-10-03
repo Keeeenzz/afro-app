@@ -264,10 +264,10 @@ export default function MixMatchScreen() {
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.header}>
-        <View style={styles.brandLockup}>
+        <TouchableOpacity style={styles.brandLockup} onPress={() => router.replace('/(tabs)/catalog')} accessibilityRole="button" accessibilityLabel="Go to catalog">
           <Image source={require('../../assets/afro-logo-black.png')} style={styles.headerLogoImage} resizeMode="contain" />
           <Text style={styles.brand}>A'FRO</Text>
-        </View>
+        </TouchableOpacity>
         <TouchableOpacity style={styles.headerIcon} onPress={openNav} activeOpacity={0.75}>
           <Ionicons name="menu-outline" size={28} color={Colors.brand.blue} />
         </TouchableOpacity>

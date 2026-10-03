@@ -32,6 +32,7 @@ function TabsContent() {
         <Tabs.Screen name="settings" options={{ title: 'Settings', headerShown: false, tabBarButton: () => null }} />
         <Tabs.Screen name="about" options={{ title: "About A'FRO", tabBarButton: () => null }} />
         <Tabs.Screen name="privacy" options={{ headerShown: false, tabBarButton: () => null }} />
+        <Tabs.Screen name="change-password" options={{ headerShown: false, tabBarButton: () => null }} />
         <Tabs.Screen name="language" options={{ headerShown: false, tabBarButton: () => null }} />
         <Tabs.Screen name="help" options={{ headerShown: false, tabBarButton: () => null }} />
         <Tabs.Screen name="product/[id]" options={{ title: 'Product', headerShown: false, tabBarButton: () => null }} />

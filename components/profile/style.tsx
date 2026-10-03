@@ -27,11 +27,13 @@ function MetricCard({ label, value }: { label: string; value: string }) {
 export function StyleTab() {
   const { user, draft } = useAuthStore();
   const router = useRouter();
-  const savedStyles = user?.fashion_style
-    ? [user.fashion_style]
-    : draft.fashion_style?.split(',').filter(Boolean) ?? [];
-  const preferredSize = user?.preferred_size ?? draft.preferred_size ?? '-';
-  const skinHex = user?.skin_hex ?? draft.skin_hex ?? null;
+  const savedStyles = draft.fashion_style
+    ? draft.fashion_style.split(',').filter(Boolean)
+    : user?.fashion_style
+      ? [user.fashion_style]
+      : [];
+  const preferredSize = draft.preferred_size ?? user?.preferred_size ?? '-';
+  const skinHex = draft.skin_hex ?? user?.skin_hex ?? null;
 
   return (
     <ScrollView showsVerticalScrollIndicator={false}>
@@ -68,10 +70,10 @@ export function StyleTab() {
 
       <Text style={styles.sectionTitle}>Body Measurements</Text>
       <View style={styles.metricGrid}>
-        <MetricCard label="Chest" value={formatCm(user?.body_chest_cm ?? draft.body_chest_cm)} />
-        <MetricCard label="Waist" value={formatCm(user?.body_waist_cm ?? draft.body_waist_cm)} />
-        <MetricCard label="Hip" value={formatCm(user?.body_hip_cm ?? draft.body_hip_cm)} />
-        <MetricCard label="Height" value={formatCm(user?.body_height_cm ?? draft.body_height_cm)} />
+        <MetricCard label="Chest" value={formatCm(draft.body_chest_cm ?? user?.body_chest_cm)} />
+        <MetricCard label="Waist" value={formatCm(draft.body_waist_cm ?? user?.body_waist_cm)} />
+        <MetricCard label="Hip" value={formatCm(draft.body_hip_cm ?? user?.body_hip_cm)} />
+        <MetricCard label="Height" value={formatCm(draft.body_height_cm ?? user?.body_height_cm)} />
       </View>
 
       <Text style={styles.sectionTitle}>Skin Tone</Text>

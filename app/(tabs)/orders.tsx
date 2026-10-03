@@ -64,12 +64,18 @@ function normalizeStatus(status: string): Filter {
 
 function timelineStatus(status: string) {
   const lower = status.toLowerCase();
-  if (lower.includes('deliver') || lower.includes('complete')) return 6;
+  if (lower.includes('out for delivery')) return 6;
+  if (lower.includes('deliver') || lower.includes('complete')) return 7;
   if (lower.includes('transit')) return 5;
   if (lower.includes('ship') || lower.includes('ready')) return 4;
   if (lower.includes('process')) return 3;
   if (lower.includes('confirm')) return 2;
   return 1;
+}
+
+function canReviewOrder(status: string) {
+  const normalized = normalizeStatus(status);
+  return normalized === 'Delivered' || normalized === 'Cancelled';
 }
 
 export default function OrdersScreen() {
@@ -147,16 +153,8 @@ export default function OrdersScreen() {
   }, [selectedOrder, selectedOrderId, selectedOrderItemId]);
 
   const openOrder = (order: OrderItem) => {
-    const status = normalizeStatus(order.status);
-    if (status === 'Active') {
-      setSelectedOrderId(order.orderId);
-      setSelectedOrderItemId(order.orderItemId);
-      return;
-    }
-
-    if (!order.reviewed) {
-      router.push({ pathname: '/(tabs)/reviews', params: { productId: order.productId, orderId: order.orderId } });
-    }
+    setSelectedOrderId(order.orderId);
+    setSelectedOrderItemId(order.orderItemId);
   };
 
   const openProductOverview = (order: OrderItem) => {
@@ -203,7 +201,7 @@ export default function OrdersScreen() {
   return (
     <ImageBackground source={require('@/assets/afro-logo-black.png')} style={styles.screen} imageStyle={styles.bgImage}>
       <View style={styles.overlay}>
-        <Header onMenu={openNav} />
+        <Header onMenu={openNav} onHome={() => router.replace('/(tabs)/catalog')} />
 
         <View style={styles.titleRow}>
           <TouchableOpacity onPress={() => (selectedOrderId ? setSelectedOrderId(null) : router.back())}>
@@ -275,7 +273,7 @@ export default function OrdersScreen() {
                         <TouchableOpacity style={styles.miniButton} onPress={() => openOrder(order)}>
                         <Text style={styles.miniButtonText}>{t('Track')}</Text>
                         </TouchableOpacity>
-                      ) : (
+                      ) : canReviewOrder(order.status) ? (
                         <TouchableOpacity
                           style={[styles.miniButton, reviewed && styles.miniButtonMuted]}
                           onPress={() => !reviewed && setSelectedOrderId(order.orderId)}
@@ -283,7 +281,7 @@ export default function OrdersScreen() {
                         >
                           <Text style={styles.miniButtonText}>{reviewed ? 'Reviewed' : 'To Review'}</Text>
                         </TouchableOpacity>
-                      )}
+                      ) : null}
                     </View>
                   </TouchableOpacity>
                 );
@@ -350,7 +348,7 @@ export default function OrdersScreen() {
               ) : null}
             </View>
 
-            {normalizeStatus(selectedHead.status) !== 'Active' && selectedItem ? (
+            {canReviewOrder(selectedHead.status) && selectedItem ? (
               <TouchableOpacity
                 style={[styles.miniButton, Boolean(selectedItem.reviewed) && styles.miniButtonMuted]}
                 onPress={() => !selectedItem.reviewed && router.push({ pathname: '/(tabs)/reviews', params: { productId: selectedItem.productId, orderId: selectedItem.orderId } })}
@@ -380,16 +378,25 @@ export default function OrdersScreen() {
               </View>
             </View>
 
-            {selectedHead.status.toLowerCase().includes('transit') ? <View style={styles.trackingCard}><Text style={styles.sectionTitle}>In Transit</Text><Text style={styles.trackingText}>Tracking ID: {selectedHead.trackingNumber || 'Not available yet'}</Text>{selectedHead.trackingUrl ? <TouchableOpacity onPress={() => Linking.openURL(selectedHead.trackingUrl!)}><Text style={styles.trackingLink}>Open tracking link</Text></TouchableOpacity> : null}</View> : null}
+            {selectedHead.trackingNumber || selectedHead.trackingUrl ? <View style={styles.trackingCard}><Text style={styles.sectionTitle}>Tracking</Text><Text style={styles.trackingText}>Tracking ID: {selectedHead.trackingNumber || 'Not available yet'}</Text>{selectedHead.trackingUrl ? <TouchableOpacity onPress={() => Linking.openURL(selectedHead.trackingUrl!)}><Text style={styles.trackingLink}>Open tracking link</Text></TouchableOpacity> : null}</View> : null}
 
             <View style={styles.statusCard}>
               <Text style={styles.statusTitle}>{t('Order Status')}</Text>
-              {[
+              {normalizeStatus(selectedHead.status) === 'Cancelled' ? (
+                <View style={styles.cancelledStatusCard}>
+                  <Ionicons name="close-circle" size={20} color={Colors.status.error} />
+                  <View>
+                    <Text style={styles.cancelledStatusTitle}>Order Cancelled</Text>
+                    <Text style={styles.cancelledStatusText}>This order was cancelled on {formatDate(selectedHead.updatedAt || selectedHead.placedAt)}.</Text>
+                  </View>
+                </View>
+              ) : [
                 ['Order Placed', selectedHead.placedAt],
                 ['Order Confirmed', selectedHead.updatedAt],
                 ['Order Processed', selectedHead.updatedAt],
                 ['Ready to Ship', selectedHead.expectedDeliveryAt],
                 ['In Transit', selectedHead.updatedAt],
+                ['Out for Delivery', selectedHead.updatedAt],
                 ['Delivered', selectedHead.expectedDeliveryAt],
               ].map(([label, date], index) => {
                 const complete = timelineStatus(selectedHead.status) >= index + 1;
@@ -398,10 +405,10 @@ export default function OrdersScreen() {
                     <View style={[styles.timelineDot, complete && styles.timelineDotComplete]}>
                       <Ionicons name="checkmark" size={13} color={complete ? Colors.text.primary : Colors.text.muted} />
                     </View>
-                    {index < 5 ? <View style={[styles.timelineLine, complete && styles.timelineLineComplete]} /> : null}
+                    {index < 6 ? <View style={[styles.timelineLine, complete && styles.timelineLineComplete]} /> : null}
                     <View style={styles.timelineTextWrap}>
                       <Text style={styles.timelineHint}>
-                        {index === 0 ? 'We have placed your order' : index === 5 ? 'We have delivered your order' : 'We have updated your order'}
+                        {index === 0 ? 'We have placed your order' : index === 6 ? 'We have delivered your order' : 'We have updated your order'}
                       </Text>
                       <Text style={styles.timelineLabel}>{label}</Text>
                       <Text style={styles.timelineDate}>{formatDate(date)}</Text>
@@ -446,7 +453,7 @@ export default function OrdersScreen() {
                       </>
                     )}
                   </TouchableOpacity>
-                  {normalizeStatus(selectedHead.status) !== 'Active' ? (
+                  {canReviewOrder(selectedHead.status) ? (
                     <TouchableOpacity style={[styles.miniButton, Boolean(item.reviewed) && styles.miniButtonMuted]} onPress={() => !item.reviewed && router.push({ pathname: '/(tabs)/reviews', params: { productId: item.productId, orderId: item.orderId } })} disabled={Boolean(item.reviewed)}>
                       <Text style={styles.miniButtonText}>{item.reviewed ? 'Reviewed' : 'To Review'}</Text>
                     </TouchableOpacity>
@@ -461,13 +468,13 @@ export default function OrdersScreen() {
   );
 }
 
-function Header({ onMenu }: { onMenu: () => void }) {
+function Header({ onMenu, onHome }: { onMenu: () => void; onHome: () => void }) {
   return (
     <View style={styles.header}>
-      <View style={styles.brandLockup}>
+      <TouchableOpacity style={styles.brandLockup} onPress={onHome} accessibilityRole="button" accessibilityLabel="Go to catalog">
         <Image source={require('@/assets/afro-logo-black.png')} style={styles.logo} resizeMode="contain" />
         <Text style={styles.brand}>A'FRO</Text>
-      </View>
+      </TouchableOpacity>
       <TouchableOpacity onPress={onMenu} style={styles.headerIcon}>
         <Ionicons name="menu-outline" size={28} color={Colors.brand.blue} />
       </TouchableOpacity>
@@ -648,6 +655,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(221, 241, 255, 0.14)',
   },
+  cancelledStatusCard: { alignItems: 'center', backgroundColor: '#FFF1F2', borderRadius: Radius.sm, flexDirection: 'row', gap: Spacing.sm, padding: Spacing.md },
+  cancelledStatusTitle: { color: Colors.status.error, fontSize: FontSize.sm, fontWeight: '900' },
+  cancelledStatusText: { color: Colors.text.secondary, fontSize: FontSize.xs, marginTop: 2 },
   itemsCard: {
     borderRadius: Radius.md,
     padding: Spacing.md,

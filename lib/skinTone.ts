@@ -1,4 +1,4 @@
-export const SKIN_TONE_API_BASE_URL =
+  export const SKIN_TONE_API_BASE_URL =
   process.env.EXPO_PUBLIC_SKIN_TONE_API_BASE_URL ??
   'https://stiffly-evacuate-oasis.ngrok-free.dev';
 

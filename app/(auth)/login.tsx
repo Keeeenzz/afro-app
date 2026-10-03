@@ -88,7 +88,7 @@ export default function LoginPage() {
             isPassword
           />
 
-          <TouchableOpacity style={styles.forgotRow}>
+          <TouchableOpacity style={styles.forgotRow} onPress={() => router.push('/(auth)/forgot-password')}>
             <Text style={styles.forgotText}>Forgot password?</Text>
           </TouchableOpacity>
 

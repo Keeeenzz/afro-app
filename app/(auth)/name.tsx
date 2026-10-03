@@ -16,7 +16,6 @@ import { Colors, Spacing } from '@/constants/theme';
 
 const NAME_MIN_LENGTH = 2;
 const NAME_MAX_LENGTH = 40;
-const ALIAS_MAX_LENGTH = 40;
 const NAME_PATTERN = /^[A-Za-z]+(?:[ '-][A-Za-z]+)*$/;
 
 export default function NamePage() {
@@ -25,7 +24,6 @@ export default function NamePage() {
 
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
-  const [alias, setAlias] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const validateName = (value: string, label: string) => {
@@ -43,16 +41,14 @@ export default function NamePage() {
     const lastNameError = validateName(lastName, 'Last name');
     if (firstNameError) e.firstName = firstNameError;
     if (lastNameError) e.lastName = lastNameError;
-    if (alias.trim().length > ALIAS_MAX_LENGTH) e.alias = `Alias must be ${ALIAS_MAX_LENGTH} characters or less.`;
     setErrors(e);
     return Object.keys(e).length === 0;
   };
 
-  const updateField = (field: 'firstName' | 'lastName' | 'alias', value: string) => {
-    const nextValue = field === 'alias' ? value.slice(0, ALIAS_MAX_LENGTH) : value.slice(0, NAME_MAX_LENGTH);
+  const updateField = (field: 'firstName' | 'lastName', value: string) => {
+    const nextValue = value.slice(0, NAME_MAX_LENGTH);
     if (field === 'firstName') setFirstName(nextValue);
     if (field === 'lastName') setLastName(nextValue);
-    if (field === 'alias') setAlias(nextValue);
     setErrors((current) => {
       if (!current[field]) return current;
       const next = { ...current };
@@ -67,7 +63,6 @@ export default function NamePage() {
       first_name: firstName.trim(),
       last_name: lastName.trim(),
       full_name: `${firstName.trim()} ${lastName.trim()}`,
-      alias: alias.trim(),
     });
     router.push('/(auth)/address');
   };
@@ -109,16 +104,6 @@ export default function NamePage() {
             error={errors.lastName}
             autoCapitalize="words"
             maxLength={NAME_MAX_LENGTH}
-          />
-
-          <Input
-            label="Alias (optional)"
-            placeholder="Nickname or preferred name"
-            value={alias}
-            onChangeText={(value) => updateField('alias', value)}
-            error={errors.alias}
-            autoCapitalize="words"
-            maxLength={ALIAS_MAX_LENGTH}
           />
 
           <Button

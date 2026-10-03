@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   SafeAreaView,
+  Image,
   ScrollView,
   StyleSheet,
   Text,
@@ -27,6 +28,17 @@ const STYLES = [
 ];
 
 const SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '2XL', '3XL'];
+
+const FALLBACK_SIZE_STANDARDS: Record<string, Required<Pick<SizeStandard, 'chestCmMin' | 'chestCmMax' | 'waistCmMin' | 'waistCmMax' | 'hipCmMin' | 'hipCmMax' | 'heightCmMin' | 'heightCmMax'>>> = {
+  XS: { chestCmMin: 76, chestCmMax: 81, waistCmMin: 61, waistCmMax: 66, hipCmMin: 84, hipCmMax: 89, heightCmMin: 150, heightCmMax: 160 },
+  S: { chestCmMin: 82, chestCmMax: 87, waistCmMin: 67, waistCmMax: 72, hipCmMin: 90, hipCmMax: 95, heightCmMin: 155, heightCmMax: 165 },
+  M: { chestCmMin: 88, chestCmMax: 94, waistCmMin: 73, waistCmMax: 79, hipCmMin: 96, hipCmMax: 102, heightCmMin: 160, heightCmMax: 170 },
+  L: { chestCmMin: 95, chestCmMax: 101, waistCmMin: 80, waistCmMax: 86, hipCmMin: 103, hipCmMax: 109, heightCmMin: 165, heightCmMax: 175 },
+  XL: { chestCmMin: 102, chestCmMax: 109, waistCmMin: 87, waistCmMax: 94, hipCmMin: 110, hipCmMax: 117, heightCmMin: 170, heightCmMax: 180 },
+  XXL: { chestCmMin: 110, chestCmMax: 117, waistCmMin: 95, waistCmMax: 102, hipCmMin: 118, hipCmMax: 125, heightCmMin: 170, heightCmMax: 185 },
+  '2XL': { chestCmMin: 110, chestCmMax: 117, waistCmMin: 95, waistCmMax: 102, hipCmMin: 118, hipCmMax: 125, heightCmMin: 170, heightCmMax: 185 },
+  '3XL': { chestCmMin: 118, chestCmMax: 125, waistCmMin: 103, waistCmMax: 110, hipCmMin: 126, hipCmMax: 133, heightCmMin: 170, heightCmMax: 190 },
+};
 
 type SizeStandard = {
   label: string;
@@ -58,6 +70,13 @@ function midpoint(min?: number | null, max?: number | null) {
   return String(Math.round(value * 10) / 10);
 }
 
+function standardForSize(size: string, standards: SizeStandard[]) {
+  const normalized = size.trim().toUpperCase();
+  const aliases: Record<string, string> = { EXTRA_SMALL: 'XS', SMALL: 'S', MEDIUM: 'M', LARGE: 'L', EXTRA_LARGE: 'XL' };
+  const key = aliases[normalized.replace(/[\s-]+/g, '_')] ?? normalized;
+  return standards.find((item) => item.label.trim().toUpperCase() === normalized) ?? FALLBACK_SIZE_STANDARDS[key];
+}
+
 export default function CustomizeFeedPage() {
   const router = useRouter();
   const draft = useAuthStore((s) => s.draft);
@@ -85,17 +104,19 @@ export default function CustomizeFeedPage() {
   ]);
 
   useEffect(() => {
-    const savedStyles = user?.fashion_style
-      ? [user.fashion_style]
-      : draft.fashion_style?.split(',').filter(Boolean) ?? [];
+    const savedStyles = draft.fashion_style
+      ? draft.fashion_style.split(',').filter(Boolean)
+      : user?.fashion_style
+        ? [user.fashion_style]
+        : [];
 
     setSelectedStyles(savedStyles);
-    setSelectedSize(user?.preferred_size ?? draft.preferred_size ?? null);
-    setSkinHex(user?.skin_hex ?? draft.skin_hex ?? '');
-    setChestCm(String(user?.body_chest_cm ?? draft.body_chest_cm ?? ''));
-    setWaistCm(String(user?.body_waist_cm ?? draft.body_waist_cm ?? ''));
-    setHipCm(String(user?.body_hip_cm ?? draft.body_hip_cm ?? ''));
-    setHeightCm(String(user?.body_height_cm ?? draft.body_height_cm ?? ''));
+    setSelectedSize(draft.preferred_size ?? user?.preferred_size ?? null);
+    setSkinHex(draft.skin_hex ?? user?.skin_hex ?? '');
+    setChestCm(String(draft.body_chest_cm ?? user?.body_chest_cm ?? ''));
+    setWaistCm(String(draft.body_waist_cm ?? user?.body_waist_cm ?? ''));
+    setHipCm(String(draft.body_hip_cm ?? user?.body_hip_cm ?? ''));
+    setHeightCm(String(draft.body_height_cm ?? user?.body_height_cm ?? ''));
   }, [
     draft.body_chest_cm,
     draft.body_height_cm,
@@ -131,18 +152,26 @@ export default function CustomizeFeedPage() {
 
   const selectSize = (size: string) => {
     setSelectedSize(size);
-    const standard = sizeStandards.find((item) => item.label.toLowerCase() === size.toLowerCase());
-    if (standard) {
-      // These are helpful editable starting points, not locked measurements.
-      const chest = midpoint(standard.chestCmMin, standard.chestCmMax);
-      const waist = midpoint(standard.waistCmMin, standard.waistCmMax);
-      const hip = midpoint(standard.hipCmMin, standard.hipCmMax);
-      const height = midpoint(standard.heightCmMin, standard.heightCmMax);
-      if (chest) setChestCm(chest);
-      if (waist) setWaistCm(waist);
-      if (hip) setHipCm(hip);
-      if (height) setHeightCm(height);
-    }
+    const standard = standardForSize(size, sizeStandards);
+    if (!standard) return;
+
+    // Apply the selected standard immediately and retain it in the shared
+    // draft so Profile > Style reflects the same values before Save is tapped.
+    const chest = midpoint(standard.chestCmMin, standard.chestCmMax);
+    const waist = midpoint(standard.waistCmMin, standard.waistCmMax);
+    const hip = midpoint(standard.hipCmMin, standard.hipCmMax);
+    const height = midpoint(standard.heightCmMin, standard.heightCmMax);
+    setChestCm(chest);
+    setWaistCm(waist);
+    setHipCm(hip);
+    setHeightCm(height);
+    setDraft({
+      preferred_size: size,
+      body_chest_cm: toNullableNumber(chest),
+      body_waist_cm: toNullableNumber(waist),
+      body_hip_cm: toNullableNumber(hip),
+      body_height_cm: toNullableNumber(height),
+    });
     setError('');
   };
 
@@ -264,7 +293,7 @@ export default function CustomizeFeedPage() {
 
         <View style={styles.header}>
           <View style={styles.avatarPlaceholder}>
-            <Text style={styles.avatarInitial}>A</Text>
+            <Image source={require('@/assets/afro-logo-black.png')} style={styles.avatarLogo} resizeMode="contain" />
           </View>
           <Text style={styles.name}>{profileName}</Text>
         </View>
@@ -456,11 +485,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: Spacing.sm,
   },
-  avatarInitial: {
-    color: Colors.text.primary,
-    fontSize: FontSize.xl,
-    fontWeight: '800',
-  },
+  avatarLogo: { width: 58, height: 58 },
   name: {
     fontSize: FontSize.base,
     color: Colors.text.secondary,
