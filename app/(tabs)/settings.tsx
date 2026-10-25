@@ -124,7 +124,7 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.bg.primary },
   header: { alignItems: 'center', flexDirection: 'row', height: 70, justifyContent: 'space-between', paddingHorizontal: Spacing.md },
   brandLockup: { alignItems: 'center', flexDirection: 'row', gap: Spacing.sm }, logo: { height: 28, width: 28 }, brand: { color: Colors.text.primary, fontSize: FontSize.lg, fontWeight: '900' }, menuButton: { alignItems: 'center', height: 42, justifyContent: 'center', width: 42 }, pageTitle: { color: Colors.text.primary, fontSize: FontSize.lg, fontWeight: '900', paddingHorizontal: Spacing.lg, paddingBottom: Spacing.md },
-  content: { paddingVertical: Spacing.md, paddingBottom: Spacing['2xl'] },
+  content: { paddingVertical: Spacing.md, paddingBottom: 112 },
   section: { marginBottom: Spacing.lg },
   sectionTitle: { color: Colors.text.secondary, fontSize: FontSize.sm, fontWeight: '700', paddingHorizontal: Spacing.lg, paddingBottom: Spacing.sm },
   sectionCard: { backgroundColor: Colors.bg.card, borderBottomWidth: 1, borderTopWidth: 1, borderColor: Colors.border.default },

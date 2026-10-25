@@ -1,22 +1,23 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   Animated,
-  Dimensions,
   TouchableWithoutFeedback,
   Image,
+  Modal,
+  ScrollView,
+  useWindowDimensions,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore } from '@/hooks/useAuthStore';
 import { Colors, FontSize, Spacing } from '@/constants/theme';
 import { useTranslation } from '@/lib/i18n';
-
-const { width } = Dimensions.get('window');
-const NAV_WIDTH = width * 0.75;
+import { imageUrl } from '@/lib/api';
 
 interface SideNavProps {
   visible: boolean;
@@ -34,15 +35,30 @@ const NAV_ITEMS = [
   { label: 'Profile', icon: 'person-outline' as const, route: '/(tabs)/profile' },
 ];
 
-export function SideNav({ visible, onClose }: SideNavProps) {
+function LegacySideNav({ visible, onClose }: SideNavProps) {
   const router = useRouter();
   const { user, logout } = useAuthStore();
   const { t } = useTranslation();
-  const slideAnim = useRef(new Animated.Value(NAV_WIDTH)).current;
+  const { width: screenWidth } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const drawerWidth = Math.min(360, Math.max(280, screenWidth * 0.8));
+  const slideAnim = useRef(new Animated.Value(drawerWidth)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
+  const [avatarLoading, setAvatarLoading] = useState(Boolean(user?.profile_photo_url));
+  const [avatarFailed, setAvatarFailed] = useState(false);
+  const avatarUri = imageUrl(user?.profile_photo_url);
+
+  useEffect(() => {
+    setAvatarLoading(Boolean(avatarUri));
+    setAvatarFailed(false);
+  }, [avatarUri]);
 
   useEffect(() => {
     if (visible) {
+      // Reset before presenting so reopening the native modal never leaves an
+      // invisible touch layer over the drawer.
+      slideAnim.setValue(drawerWidth);
+      fadeAnim.setValue(0);
       Animated.parallel([
         Animated.timing(slideAnim, {
           toValue: 0,
@@ -58,7 +74,7 @@ export function SideNav({ visible, onClose }: SideNavProps) {
     } else {
       Animated.parallel([
         Animated.timing(slideAnim, {
-          toValue: NAV_WIDTH,
+          toValue: drawerWidth,
           duration: 220,
           useNativeDriver: true,
         }),
@@ -69,9 +85,7 @@ export function SideNav({ visible, onClose }: SideNavProps) {
         }),
       ]).start();
     }
-  }, [visible]);
-
-  if (!visible) return null;
+  }, [drawerWidth, fadeAnim, slideAnim, visible]);
 
   const handleNavigate = (route: string) => {
     onClose();
@@ -90,7 +104,14 @@ export function SideNav({ visible, onClose }: SideNavProps) {
   const isVerified = Boolean(user?.user_id);
 
   return (
-    <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+    <Modal
+      visible={visible}
+      transparent
+      animationType="none"
+      statusBarTranslucent
+      onRequestClose={onClose}
+    >
+      <View style={styles.modalRoot}>
       {/* Backdrop */}
       <TouchableWithoutFeedback onPress={onClose}>
         <Animated.View style={[styles.backdrop, { opacity: fadeAnim }]} />
@@ -100,7 +121,12 @@ export function SideNav({ visible, onClose }: SideNavProps) {
       <Animated.View
         style={[
           styles.drawer,
-          { transform: [{ translateX: slideAnim }] },
+          {
+            width: drawerWidth,
+            paddingTop: insets.top + Spacing.lg,
+            paddingBottom: insets.bottom + Spacing.md,
+            transform: [{ translateX: slideAnim }],
+          },
         ]}
       >
         {/* User info */}
@@ -110,8 +136,11 @@ export function SideNav({ visible, onClose }: SideNavProps) {
             activeOpacity={0.7}
         >
           <View style={styles.avatarWrap}>
-            {user?.profile_photo_url ? (
-              <Image source={{ uri: user.profile_photo_url }} style={styles.avatar} />
+            {avatarUri && !avatarFailed ? (
+              <>
+                {avatarLoading ? <View style={styles.avatarLoading} /> : null}
+                <Image source={{ uri: avatarUri }} style={styles.avatar} resizeMode="cover" onLoadEnd={() => setAvatarLoading(false)} onError={() => { setAvatarFailed(true); setAvatarLoading(false); }} />
+              </>
             ) : (
               <View style={styles.avatarPlaceholder}>
                 <Text style={styles.avatarInitial}>
@@ -134,8 +163,14 @@ export function SideNav({ visible, onClose }: SideNavProps) {
         {/* Divider */}
         <View style={styles.divider} />
 
-        {/* Nav items */}
-        <View style={styles.navItems}>
+        {/* The middle section scrolls on compact displays while Logout stays
+            in the drawer's safe-area footer and remains tappable. */}
+        <ScrollView
+          style={styles.navScroll}
+          contentContainerStyle={styles.navItems}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
           {NAV_ITEMS.map((item) => (
             <TouchableOpacity
               key={item.label}
@@ -147,7 +182,7 @@ export function SideNav({ visible, onClose }: SideNavProps) {
               <Text style={styles.navLabel}>{t(item.label)}</Text>
             </TouchableOpacity>
           ))}
-        </View>
+        </ScrollView>
 
         {/* Log out */}
         <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout} activeOpacity={0.7}>
@@ -155,11 +190,15 @@ export function SideNav({ visible, onClose }: SideNavProps) {
           <Text style={styles.logoutLabel}>{t('Log Out')}</Text>
         </TouchableOpacity>
       </Animated.View>
-    </View>
+      </View>
+    </Modal>
   );
 }
 
 const styles = StyleSheet.create({
+  modalRoot: {
+    flex: 1,
+  },
   backdrop: {
     position: 'absolute',
     top: 0,
@@ -173,12 +212,11 @@ const styles = StyleSheet.create({
     right: 0,
     top: 0,
     bottom: 0,
-    width: NAV_WIDTH,
     backgroundColor: Colors.bg.secondary,
-    paddingTop: 60,
-    paddingBottom: Spacing['2xl'],
     borderLeftWidth: 1,
     borderLeftColor: Colors.border.default,
+    zIndex: 1,
+    elevation: 24,
   },
   userSection: {
     flexDirection: 'row',
@@ -187,8 +225,9 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.lg,
     gap: 12,
   },
-  avatarWrap: { position: 'relative' },
+  avatarWrap: { position: 'relative', width: 48, height: 48, borderRadius: 24, overflow: 'hidden', backgroundColor: Colors.bg.card },
   avatar: { width: 48, height: 48, borderRadius: 24 },
+  avatarLoading: { ...StyleSheet.absoluteFill, backgroundColor: Colors.border.default },
   avatarPlaceholder: {
     width: 48,
     height: 48,
@@ -233,7 +272,8 @@ const styles = StyleSheet.create({
     marginHorizontal: Spacing.lg,
     marginBottom: Spacing.md,
   },
-  navItems: { flex: 1, paddingHorizontal: Spacing.md },
+  navScroll: { flex: 1 },
+  navItems: { paddingHorizontal: Spacing.md, paddingBottom: Spacing.sm },
   navItem: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -254,6 +294,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg + Spacing.md,
     paddingVertical: 14,
     marginTop: Spacing.md,
+    minHeight: 52,
   },
   logoutLabel: {
     fontSize: FontSize.base,
@@ -261,3 +302,5 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
 });
+
+export { SideNavRedesign as SideNav } from './SideNavRedesign';

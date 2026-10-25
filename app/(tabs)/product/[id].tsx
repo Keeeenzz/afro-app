@@ -1,17 +1,23 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   Image,
+  FlatList,
   Modal,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
+import { MotiView } from 'moti';
+import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { apiGet, apiPost, imageUrl } from '@/lib/api';
 import { Colors, FontSize, Radius, Spacing } from '@/constants/theme';
@@ -94,6 +100,8 @@ export default function ProductOverviewScreen() {
   const [selectedImage, setSelectedImage] = useState('');
   const [selectedSizeId, setSelectedSizeId] = useState<number | string | null>(null);
   const [cartNotice, setCartNotice] = useState<{ name: string; size: string | null } | null>(null);
+  const [cartFlight, setCartFlight] = useState(false);
+  const galleryRef = useRef<FlatList<string>>(null);
 
   const loadProduct = async () => {
     if (!id) return;
@@ -199,6 +207,9 @@ export default function ProductOverviewScreen() {
         token,
       );
       setCartNotice({ name: product.name, size: selectedSizeLabel });
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setCartFlight(true);
+      setTimeout(() => setCartFlight(false), 720);
     } catch (err) {
       Alert.alert('Could not add item', err instanceof Error ? err.message : 'Please try again.');
     } finally {
@@ -292,13 +303,21 @@ export default function ProductOverviewScreen() {
           contentContainerStyle={styles.content}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={Colors.brand.blueLight} />}
         >
-          <View style={styles.heroImage}>
-            {selectedImage ? (
-              <Image source={{ uri: imageUrl(selectedImage) ?? selectedImage }} style={styles.image} resizeMode="cover" />
-            ) : (
-              <Ionicons name="image-outline" size={42} color={Colors.text.secondary} />
-            )}
-          </View>
+          <FlatList
+            ref={galleryRef}
+            data={imageItems}
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            keyExtractor={(image) => image}
+            style={styles.gallery}
+            onMomentumScrollEnd={(event) => {
+              const index = Math.round(event.nativeEvent.contentOffset.x / event.nativeEvent.layoutMeasurement.width);
+              setSelectedImage(imageItems[index] ?? imageItems[0] ?? '');
+            }}
+            renderItem={({ item }) => <ZoomableProductImage uri={imageUrl(item) ?? item} />}
+            ListEmptyComponent={<View style={styles.heroImage}><Ionicons name="image-outline" size={42} color={Colors.text.secondary} /></View>}
+          />
 
           {imageItems.length > 1 ? (
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.thumbnailRow}>
@@ -308,7 +327,11 @@ export default function ProductOverviewScreen() {
                   <TouchableOpacity
                     key={image}
                     style={[styles.thumbnail, selected && styles.thumbnailActive]}
-                    onPress={() => setSelectedImage(image)}
+                      onPress={() => {
+                        const index = imageItems.indexOf(image);
+                        galleryRef.current?.scrollToIndex({ index, animated: true });
+                        setSelectedImage(image);
+                      }}
                     activeOpacity={0.8}
                   >
                     <Image source={{ uri: imageUrl(image) ?? image }} style={styles.thumbnailImage} resizeMode="cover" />
@@ -349,7 +372,6 @@ export default function ProductOverviewScreen() {
             <DetailRow label="Garment type" value={product.category || 'Not set'} />
             <DetailRow label="Gender" value={product.gender || 'Not set'} />
             <DetailRow label="Color" value={product.color || 'Not set'} swatch={product.colorHex} />
-            <DetailRow label="Rating" value={`${Number(product.avgRating ?? 0).toFixed(1)} / 5`} />
           </DetailSection>
 
           <DetailSection title="Description">
@@ -365,20 +387,26 @@ export default function ProductOverviewScreen() {
                   const selected = String(size.sizeId) === String(selectedSizeId);
                   const unavailable = Number(size.stockQty) <= 0;
                   return (
-                    <TouchableOpacity
+                    <MotiView
                       key={String(size.sizeId)}
-                      style={[
-                        styles.sizeChip,
-                        selected && styles.sizeChipActive,
-                        unavailable && styles.sizeChipDisabled,
-                      ]}
-                      onPress={() => !unavailable && setSelectedSizeId(size.sizeId)}
-                      disabled={unavailable}
-                      activeOpacity={0.75}
+                      animate={{ scale: selected ? 1.04 : 1 }}
+                      transition={{ type: 'spring', damping: 12 }}
                     >
-                      <Text style={[styles.sizeLabel, selected && styles.sizeLabelActive]}>{size.label}</Text>
-                      <Text style={styles.sizeQty}>{unavailable ? 'Out' : `${size.stockQty} left`}</Text>
-                    </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.sizeChip, selected && styles.sizeChipActive, unavailable && styles.sizeChipDisabled]}
+                        onPress={() => {
+                          if (!unavailable) {
+                            void Haptics.selectionAsync();
+                            setSelectedSizeId(size.sizeId);
+                          }
+                        }}
+                        disabled={unavailable}
+                        activeOpacity={0.75}
+                      >
+                        <Text style={[styles.sizeLabel, selected && styles.sizeLabelActive]}>{size.label}</Text>
+                        <Text style={styles.sizeQty}>{unavailable ? 'Out' : `${size.stockQty} left`}</Text>
+                      </TouchableOpacity>
+                    </MotiView>
                   );
                 })}
               </View>
@@ -435,7 +463,7 @@ export default function ProductOverviewScreen() {
             ) : (
               <>
                 <Ionicons name="chatbubble-ellipses-outline" size={18} color={Colors.text.primary} />
-                <Text style={styles.tryOnText}>Message</Text>
+                <Text style={styles.tryOnText}>Inquire</Text>
               </>
             )}
           </TouchableOpacity>
@@ -455,6 +483,8 @@ export default function ProductOverviewScreen() {
           </TouchableOpacity>
         </View>
       ) : null}
+
+      {cartFlight ? <MotiView pointerEvents="none" from={{ opacity: 1, translateY: 0, translateX: 0, scale: 1 }} animate={{ opacity: 0, translateY: 390, translateX: 115, scale: 0.38 }} transition={{ type: 'timing', duration: 620 }} style={styles.cartFlight}><Ionicons name="bag-handle" size={28} color={Colors.white} /></MotiView> : null}
 
       <Modal transparent visible={!!cartNotice} animationType="fade" onRequestClose={() => setCartNotice(null)}>
         <View style={styles.noticeOverlay}>
@@ -499,6 +529,25 @@ function DetailSection({ title, children }: { title: string; children: ReactNode
       {children}
     </View>
   );
+}
+
+function ZoomableProductImage({ uri }: { uri: string }) {
+  const { width } = useWindowDimensions();
+  const scale = useSharedValue(1);
+  const baseScale = useSharedValue(1);
+  const pinch = Gesture.Pinch()
+    .onUpdate((event) => { scale.value = Math.max(1, Math.min(3, baseScale.value * event.scale)); })
+    .onEnd(() => {
+      baseScale.value = scale.value > 1.05 ? scale.value : 1;
+      if (scale.value <= 1.05) scale.value = withSpring(1);
+    });
+  const doubleTap = Gesture.Tap().numberOfTaps(2).onEnd(() => {
+    const next = scale.value > 1.1 ? 1 : 2;
+    scale.value = withSpring(next);
+    baseScale.value = next;
+  });
+  const imageStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+  return <View style={[styles.heroImage, { width }]}><GestureDetector gesture={Gesture.Simultaneous(pinch, doubleTap)}><Animated.Image source={{ uri }} style={[styles.image, imageStyle]} resizeMode="cover" /></GestureDetector><View pointerEvents="none" style={styles.zoomHint}><Ionicons name="expand-outline" size={14} color={Colors.white} /><Text style={styles.zoomHintText}>Pinch to zoom</Text></View></View>;
 }
 
 function DetailRow({ label, value, swatch }: { label: string; value: string; swatch?: string | null }) {
@@ -554,8 +603,10 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: Spacing.md,
+    // Keep details clear of the fixed product controls.
     paddingBottom: 120,
   },
+  gallery: { marginHorizontal: -Spacing.md, marginBottom: Spacing.sm },
   heroImage: {
     width: '100%',
     aspectRatio: 1,
@@ -567,6 +618,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  zoomHint: { position: 'absolute', right: Spacing.sm, bottom: Spacing.sm, flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: Radius.full, paddingHorizontal: 8, paddingVertical: 5, backgroundColor: 'rgba(8,45,92,0.72)' },
+  zoomHintText: { color: Colors.white, fontSize: 9, fontWeight: '800' },
   image: {
     width: '100%',
     height: '100%',
@@ -701,13 +754,14 @@ const styles = StyleSheet.create({
   },
   sizeChip: {
     minWidth: 72,
+    height: 64,
     borderRadius: Radius.md,
     borderWidth: 1,
     borderColor: Colors.border.default,
     backgroundColor: Colors.bg.input,
-    paddingVertical: Spacing.sm,
     paddingHorizontal: Spacing.md,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   sizeChipActive: {
     backgroundColor: Colors.brand.blue,
@@ -720,6 +774,8 @@ const styles = StyleSheet.create({
     color: Colors.text.primary,
     fontSize: FontSize.sm,
     fontWeight: '900',
+    includeFontPadding: false,
+    textAlignVertical: 'center',
   },
   sizeLabelActive: {
     color: Colors.white,
@@ -728,7 +784,8 @@ const styles = StyleSheet.create({
     color: Colors.text.secondary,
     fontSize: 10,
     fontWeight: '700',
-    marginTop: 2,
+    includeFontPadding: false,
+    textAlignVertical: 'center',
   },
   measureGrid: {
     flexDirection: 'row',
@@ -773,11 +830,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: Spacing.sm,
     padding: Spacing.md,
-    paddingBottom: Spacing.lg,
+    paddingBottom: Spacing.md,
     backgroundColor: '#FFFFFF',
     borderTopWidth: 1,
     borderTopColor: Colors.border.default,
   },
+  cartFlight: { position: 'absolute', top: 255, left: '45%', zIndex: 100, width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.brand.blue, elevation: 12 },
   tryOnButton: {
     flex: 0.72,
     height: 50,

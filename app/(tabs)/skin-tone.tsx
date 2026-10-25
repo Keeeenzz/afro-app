@@ -3,6 +3,7 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
+import { MotiView } from 'moti';
 import {
   ActivityIndicator,
   Alert,
@@ -117,11 +118,11 @@ export default function SkinToneScreen() {
   const neutralColors = result?.recommended_colors?.neutral ?? [];
   const catalogColorNames = skinToneCatalogColorNames(result);
 
-  const viewCatalogMatches = () => {
+  const viewCatalogMatches = (colors = catalogColorNames) => {
     router.push({
       pathname: '/(tabs)/catalog',
       params: {
-        toneColors: catalogColorNames.join('|'),
+        toneColors: colors.join('|'),
         toneLabel: skinTone?.label ?? 'Skin Tone AI',
       },
     });
@@ -184,6 +185,7 @@ export default function SkinToneScreen() {
               <Text style={styles.previewEmptyText}>Your selected photo will appear here.</Text>
             </View>
           )}
+          <View pointerEvents="none" style={styles.faceGuide}><View style={styles.faceGuideOval} /><View style={styles.faceGuideLine} /><Text style={styles.faceGuideText}>Center your face here</Text></View>
         </View>
 
         <View style={styles.statusPanel}>
@@ -215,12 +217,14 @@ export default function SkinToneScreen() {
           {bestColors.length || neutralColors.length ? (
             <>
               <View style={styles.swatchRow}>
-                {bestColors.map((color) => (
-                  <View style={styles.swatchItem} key={`best-${color.color_name}`}>
+                {bestColors.map((color, index) => (
+                  <MotiView key={`best-${color.color_name}`} style={styles.swatchCard} from={{ opacity: 0, translateY: 12, scale: 0.9 }} animate={{ opacity: 1, translateY: 0, scale: 1 }} transition={{ type: 'timing', duration: 260, delay: index * 85 }}>
+                  <TouchableOpacity style={styles.swatchItem} onPress={() => viewCatalogMatches([color.color_name])} activeOpacity={0.78}>
                     <View style={[styles.swatch, { backgroundColor: color.color_hex || '#E5E7EB' }]} />
                     <Text style={styles.swatchName}>{color.color_name}</Text>
                     <Text style={styles.swatchHex}>{color.color_hex}</Text>
-                  </View>
+                  </TouchableOpacity>
+                  </MotiView>
                 ))}
               </View>
 
@@ -228,10 +232,10 @@ export default function SkinToneScreen() {
                 <>
                   <Text style={styles.subheading}>Neutral options</Text>
                   <View style={styles.chipRow}>
-                    {neutralColors.map((color) => (
-                      <View style={styles.chip} key={`neutral-${color.color_name}`}>
+                    {neutralColors.map((color, index) => (
+                      <MotiView key={`neutral-${color.color_name}`} from={{ opacity: 0, translateY: 8 }} animate={{ opacity: 1, translateY: 0 }} transition={{ type: 'timing', duration: 220, delay: index * 60 }}><TouchableOpacity style={styles.chip} onPress={() => viewCatalogMatches([color.color_name])}>
                         <Text style={styles.chipText}>{color.color_name}</Text>
-                      </View>
+                      </TouchableOpacity></MotiView>
                     ))}
                   </View>
                 </>
@@ -243,7 +247,7 @@ export default function SkinToneScreen() {
         </View>
 
         {catalogColorNames.length ? (
-          <TouchableOpacity style={styles.catalogButton} onPress={viewCatalogMatches} activeOpacity={0.82}>
+          <TouchableOpacity style={styles.catalogButton} onPress={() => viewCatalogMatches()} activeOpacity={0.82}>
             <View>
               <Text style={styles.catalogButtonText}>View matching catalog</Text>
               <Text style={styles.catalogButtonMeta}>{catalogColorNames.length} color filters ready</Text>
@@ -381,6 +385,10 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.md,
     overflow: 'hidden',
   },
+  faceGuide: { position: 'absolute', inset: 0, alignItems: 'center', justifyContent: 'center' },
+  faceGuideOval: { width: '42%', height: '60%', borderRadius: 999, borderWidth: 2, borderColor: 'rgba(255,255,255,0.85)', borderStyle: 'dashed', backgroundColor: 'rgba(14,79,141,0.10)' },
+  faceGuideLine: { position: 'absolute', height: '62%', width: 1, backgroundColor: 'rgba(255,255,255,0.75)' },
+  faceGuideText: { position: 'absolute', bottom: Spacing.sm, color: Colors.white, borderRadius: Radius.full, overflow: 'hidden', backgroundColor: 'rgba(8,45,92,0.76)', paddingHorizontal: Spacing.sm, paddingVertical: 4, fontSize: 10, fontWeight: '800' },
   previewImage: {
     height: '100%',
     resizeMode: 'cover',
@@ -502,6 +510,9 @@ const styles = StyleSheet.create({
     borderRadius: Radius.md,
     borderWidth: 1,
     padding: Spacing.sm,
+    width: '100%',
+  },
+  swatchCard: {
     width: '47%',
   },
   swatch: {

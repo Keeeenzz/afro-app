@@ -5,7 +5,6 @@ import {
   GestureResponderEvent,
   Image,
   Modal,
-  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -13,14 +12,18 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { MotiView } from 'moti';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { apiGet, apiPost, imageUrl } from '@/lib/api';
 import { Colors, FontSize, Radius, Spacing } from '@/constants/theme';
 import { useNav } from '@/context/NavContext';
 import { useAuthStore } from '@/hooks/useAuthStore';
 import type { ReactNode } from 'react';
+import { SkeletonCard } from '@/components/ui/SkeletonCard';
+import { PressableScale } from '@/components/ui/PressableScale';
 
 type Product = {
   id: string;
@@ -41,6 +44,8 @@ type Product = {
   categorySlug?: string | null;
   genderId?: number | string | null;
   gender?: string | null;
+  audienceIds?: string | null;
+  audienceTags?: string | null;
   avgRating?: number | null;
   imageUrl?: string | null;
   size?: string | null;
@@ -61,9 +66,22 @@ type Lookups = {
   garmentTypes: Lookup[];
   colorFamilies?: Lookup[];
   fashionStyles?: Lookup[];
+  styleAudiences?: Lookup[];
 };
 
 type SortOption = 'newest' | 'priceLow' | 'priceHigh';
+type PriceRange = 'all' | 'under500' | '500to1000' | 'over1000';
+type FilterValues = {
+  categoryId: number | string | 'all';
+  sizeLabel: string | 'all';
+  genderId: number | string | 'all';
+  audienceId: number | string | 'all';
+  colorFamilyId: number | string | 'all';
+  styleId: number | string | 'all';
+  inStockOnly: boolean;
+  priceRange: PriceRange;
+  sort: SortOption;
+};
 
 const SORT_LABELS: Record<SortOption, string> = {
   newest: 'Newest',
@@ -71,6 +89,13 @@ const SORT_LABELS: Record<SortOption, string> = {
   priceHigh: 'Price: High',
 };
 const PRODUCTS_PER_PAGE = 10;
+const GRID_GAP = Spacing.md;
+const PRICE_RANGE_LABELS: Record<PriceRange, string> = {
+  all: 'Any price',
+  under500: 'Under ₱500',
+  '500to1000': '₱500–₱1,000',
+  over1000: 'Over ₱1,000',
+};
 const NEUTRAL_BOTTOM_COLORS = ['black', 'white', 'gray', 'grey', 'beige', 'cream', 'brown', 'navy', 'denim', 'blue'];
 
 function compactPeso(value: number) {
@@ -223,6 +248,7 @@ export default function CatalogScreen() {
   const { openNav } = useNav();
   const { user, token } = useAuthStore();
   const router = useRouter();
+  const { width: screenWidth } = useWindowDimensions();
   const params = useLocalSearchParams<{ toneColors?: string; toneLabel?: string }>();
   const [products, setProducts] = useState<Product[]>([]);
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
@@ -241,10 +267,12 @@ export default function CatalogScreen() {
   const [categoryId, setCategoryId] = useState<number | string | 'all'>('all');
   const [sizeLabel, setSizeLabel] = useState<string | 'all'>('all');
   const [genderId, setGenderId] = useState<number | string | 'all'>('all');
+  const [audienceId, setAudienceId] = useState<number | string | 'all'>('all');
   const [colorFamilyId, setColorFamilyId] = useState<number | string | 'all'>('all');
   const [styleId, setStyleId] = useState<number | string | 'all'>('all');
   const [inStockOnly, setInStockOnly] = useState(true);
   const [sort, setSort] = useState<SortOption>('newest');
+  const [priceRange, setPriceRange] = useState<PriceRange>('all');
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [toneColorNames, setToneColorNames] = useState<string[]>([]);
   const [toneLabel, setToneLabel] = useState('');
@@ -268,6 +296,7 @@ export default function CatalogScreen() {
       garmentTypes: meta.garmentTypes ?? [],
       colorFamilies: meta.colorFamilies ?? [],
       fashionStyles: meta.fashionStyles ?? [],
+      styleAudiences: meta.styleAudiences ?? [],
     });
   }, [token, user?.user_id]);
 
@@ -359,10 +388,12 @@ export default function CatalogScreen() {
     categoryId !== 'all',
     sizeLabel !== 'all',
     genderId !== 'all',
+    audienceId !== 'all',
     colorFamilyId !== 'all',
     styleId !== 'all',
     toneColorNames.length > 0,
     !inStockOnly,
+    priceRange !== 'all',
     sort !== 'newest',
   ].filter(Boolean).length;
 
@@ -389,6 +420,7 @@ export default function CatalogScreen() {
         product.colorFamily,
         product.category,
         product.gender,
+        product.audienceTags,
         product.size,
       ]
         .filter(Boolean)
@@ -408,14 +440,30 @@ export default function CatalogScreen() {
         (categoryId === 'all' || String(product.categoryId) === String(categoryId)) &&
         matchesSelectedSize &&
         (genderId === 'all' || String(product.genderId) === String(genderId)) &&
+        (audienceId === 'all' || String(product.audienceIds ?? '').split(',').includes(String(audienceId))) &&
         (colorFamilyId === 'all' || String(product.colorFamilyId) === String(colorFamilyId)) &&
         (styleId === 'all' || String(product.styleId) === String(styleId)) &&
         matchesSkinToneColors &&
+        (priceRange === 'all' ||
+          (priceRange === 'under500' && product.price < 500) ||
+          (priceRange === '500to1000' && product.price >= 500 && product.price <= 1000) ||
+          (priceRange === 'over1000' && product.price > 1000)) &&
         (!inStockOnly || product.qty > 0)
       );
     });
 
     return filtered.sort((a, b) => {
+      // Keep explicit user choices first while preserving the selected sort
+      // within each preference group. Untagged legacy products remain visible.
+      const preferredAudiences = user?.audienceIds ?? [];
+      const score = (product: Product) => {
+        const productAudienceIds = String(product.audienceIds ?? '').split(',').map(Number);
+        const audienceMatch = preferredAudiences.some((id) => productAudienceIds.includes(id)) ? 2 : 0;
+        const sizeMatch = selectedSize && productSizeLabels(product).map(normalizeSizeLabel).includes(selectedSize) ? 1 : 0;
+        return audienceMatch + sizeMatch;
+      };
+      const priority = score(b) - score(a);
+      if (priority) return priority;
       if (sort === 'priceLow') return a.price - b.price;
       if (sort === 'priceHigh') return b.price - a.price;
       return 0;
@@ -425,8 +473,11 @@ export default function CatalogScreen() {
     colorFamilyId,
     styleId,
     genderId,
+    audienceId,
     inStockOnly,
     products,
+    user?.audienceIds,
+    priceRange,
     search,
     sizeLabel,
     sort,
@@ -442,7 +493,7 @@ export default function CatalogScreen() {
   useEffect(() => {
     setCurrentPage(1);
     setGoToPage('');
-  }, [categoryId, colorFamilyId, genderId, inStockOnly, search, sizeLabel, sort, styleId, toneColorNames]);
+  }, [audienceId, categoryId, colorFamilyId, genderId, inStockOnly, priceRange, search, sizeLabel, sort, styleId, toneColorNames]);
 
   useEffect(() => {
     setCurrentPage((page) => Math.min(page, totalPages));
@@ -464,18 +515,31 @@ export default function CatalogScreen() {
     setCategoryId('all');
     setSizeLabel('all');
     setGenderId('all');
+    setAudienceId('all');
     setColorFamilyId('all');
     setStyleId('all');
     setToneColorNames([]);
     setToneLabel('');
     setInStockOnly(true);
+    setPriceRange('all');
     setSort('newest');
   };
+  // Use the actual available row width. A fixed minimum here would make two
+  // columns overflow on compact Android devices.
+  const cardWidth = Math.floor((screenWidth - Spacing.md * 2 - GRID_GAP) / 2);
 
   if (loading) {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator color={Colors.brand.blueLight} />
+      <View style={styles.skeletonScreen}>
+        <View style={styles.skeletonHeader}>
+          <View style={styles.skeletonBrand} />
+          <View style={styles.skeletonSearch} />
+          <View style={styles.skeletonBanner} />
+          <View style={styles.skeletonTabs} />
+        </View>
+        <View style={styles.skeletonGrid}>
+          {Array.from({ length: 6 }, (_, index) => <SkeletonCard key={index} style={[styles.skeletonCard, { width: cardWidth }]} />)}
+        </View>
       </View>
     );
   }
@@ -485,7 +549,7 @@ export default function CatalogScreen() {
       <FlatList
         data={filteredProducts.slice(pageStartIndex, pageEndIndex)}
         keyExtractor={(item) => item.id}
-        extraData={`${currentPage}-${filteredProducts.length}-${search}-${categoryId}-${sizeLabel}-${genderId}-${colorFamilyId}-${sort}-${inStockOnly}`}
+        extraData={`${currentPage}-${filteredProducts.length}-${search}-${categoryId}-${sizeLabel}-${genderId}-${audienceId}-${colorFamilyId}-${priceRange}-${sort}-${inStockOnly}-${cardWidth}`}
         numColumns={2}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.list}
@@ -543,10 +607,14 @@ export default function CatalogScreen() {
               onPress={() => router.push('/(tabs)/skin-tone')}
               activeOpacity={0.82}
             >
+              <View style={styles.toneGlow} />
+              <View style={styles.toneOrbOne} />
+              <View style={styles.toneOrbTwo} />
               <View style={styles.toneIcon}>
                 <Ionicons name="color-palette-outline" size={22} color={Colors.white} />
               </View>
               <View style={styles.toneCopy}>
+                <Text style={styles.bannerEyebrow}>PERSONALIZED PALETTE</Text>
                 <Text style={styles.toneTitle}>
                   {toneColorNames.length ? `${toneLabel || 'Skin Tone AI'} matches` : 'Skin Tone AI'}
                 </Text>
@@ -567,9 +635,7 @@ export default function CatalogScreen() {
                 >
                   <Ionicons name="close" size={18} color={Colors.text.primary} />
                 </TouchableOpacity>
-              ) : (
-                <Ionicons name="chevron-forward" size={20} color={Colors.text.secondary} />
-              )}
+              ) : null}
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -577,16 +643,23 @@ export default function CatalogScreen() {
               onPress={() => router.push('/(tabs)/mix-match')}
               activeOpacity={0.82}
             >
+              <View style={styles.mixGlow} />
+              <View style={styles.mixGrid}>
+                <View style={[styles.mixTile, { backgroundColor: '#BBD3EE' }]} />
+                <View style={[styles.mixTile, { backgroundColor: '#6FA3DB' }]} />
+                <View style={[styles.mixTile, { backgroundColor: '#1B6DBB' }]} />
+                <View style={[styles.mixTile, { backgroundColor: Colors.brand.blue }]} />
+              </View>
               <View style={styles.mixIcon}>
                 <Ionicons name="swap-horizontal-outline" size={22} color={Colors.white} />
               </View>
               <View style={styles.mixCopy}>
+                <Text style={styles.mixEyebrow}>BUILD YOUR LOOK</Text>
                 <Text style={styles.mixTitle}>Mix & Match</Text>
-                <Text style={styles.mixText} numberOfLines={1}>
-                  Pair tops and bottoms, then send the look to Try On
+                <Text style={styles.mixText} numberOfLines={2}>
+                  Pair tops and bottoms, to Try On
                 </Text>
               </View>
-              <Ionicons name="chevron-forward" size={20} color={Colors.text.secondary} />
             </TouchableOpacity>
 
             <ScrollView
@@ -604,6 +677,7 @@ export default function CatalogScreen() {
                     activeOpacity={0.75}
                   >
                     <Text style={[styles.tabText, selected && styles.tabTextActive]}>{tab.label}</Text>
+                    {selected ? <MotiView from={{ opacity: 0, scaleX: 0.35 }} animate={{ opacity: 1, scaleX: 1 }} transition={{ type: 'timing', duration: 220 }} style={styles.tabIndicator} /> : null}
                   </TouchableOpacity>
                 );
               })}
@@ -638,9 +712,11 @@ export default function CatalogScreen() {
             />
           ) : null
         }
-        renderItem={({ item }) => (
+        renderItem={({ item, index }) => (
           <ProductCard
             product={item}
+            index={index}
+            width={cardWidth}
             isSaved={savedIds.has(item.id)}
             onToggleSaved={() => toggleSaved(item.id)}
             onTryOn={() =>
@@ -656,17 +732,24 @@ export default function CatalogScreen() {
       <FilterModal
         visible={filtersOpen}
         lookups={lookups}
+        categoryId={categoryId}
         sizeLabel={sizeLabel}
         genderId={genderId}
+        audienceId={audienceId}
         colorFamilyId={colorFamilyId}
         styleId={styleId}
         inStockOnly={inStockOnly}
+        priceRange={priceRange}
         sort={sort}
+        resultCount={filteredProducts.length}
+        onCategoryChange={setCategoryId}
         onSizeChange={setSizeLabel}
         onGenderChange={setGenderId}
+        onAudienceChange={setAudienceId}
         onColorFamilyChange={setColorFamilyId}
         onStyleChange={setStyleId}
         onStockChange={setInStockOnly}
+        onPriceRangeChange={setPriceRange}
         onSortChange={setSort}
         onReset={resetFilters}
         onClose={() => setFiltersOpen(false)}
@@ -757,11 +840,15 @@ function PaginationControls({
 
 function ProductCard({
   product,
+  index,
+  width,
   isSaved,
   onToggleSaved,
   onTryOn,
 }: {
   product: Product;
+  index: number;
+  width: number;
   isSaved: boolean;
   onToggleSaved: () => void;
   onTryOn: () => void;
@@ -773,6 +860,12 @@ function ProductCard({
   const soldOut = product.qty <= 0;
 
   return (
+    <MotiView
+      from={{ opacity: 0, translateY: 14 }}
+      animate={{ opacity: 1, translateY: 0 }}
+      transition={{ type: 'timing', duration: 320, delay: Math.min(index, 7) * 45 }}
+      style={[styles.cardMotion, { width }]}
+    >
     <TouchableOpacity
       style={styles.card}
       onPress={() => router.push(`/(tabs)/product/${product.id}`)}
@@ -784,67 +877,74 @@ function ProductCard({
         ) : (
           <Ionicons name="image-outline" size={30} color={Colors.text.secondary} />
         )}
-        <TouchableOpacity
-          style={[styles.heartButton, isSaved && styles.heartButtonSaved]}
-          activeOpacity={0.75}
+        <PressableScale
+          style={styles.heartButton}
+          pressedScale={0.82}
           onPress={(event: GestureResponderEvent) => {
             event.stopPropagation();
             onToggleSaved();
           }}
         >
-          <Ionicons name={isSaved ? 'heart' : 'heart-outline'} size={21} color="#276296" />
-        </TouchableOpacity>
+          <MotiView animate={{ scale: isSaved ? 1.16 : 1, rotate: isSaved ? '0deg' : '-8deg' }} transition={{ type: 'spring', damping: 9 }}>
+            <Ionicons name={isSaved ? 'heart' : 'heart-outline'} size={21} color={isSaved ? '#E05274' : '#276296'} />
+          </MotiView>
+        </PressableScale>
       </View>
 
       <View style={styles.nameRow}>
-        <Text style={styles.name} numberOfLines={1}>{product.name}</Text>
-        {primarySize ? (
-          <View style={styles.sizePill}>
-            <Text style={styles.sizePillText}>{primarySize}</Text>
-          </View>
-        ) : null}
+        <Text style={styles.name} numberOfLines={2}>{product.name}</Text>
       </View>
 
       <Text style={styles.meta} numberOfLines={1}>
-        {[product.category, product.color, product.gender].filter(Boolean).join(' / ')}
+        {[product.category, product.color, product.audienceTags, primarySize].filter(Boolean).join(' / ')}
       </Text>
 
       <View style={styles.footer}>
-        <View>
-          <Text style={styles.price}>{compactPeso(product.price)}</Text>
-          <Text style={[styles.stock, soldOut && styles.stockOut]}>
+        <View style={styles.priceBlock}>
+          <Text style={styles.price} numberOfLines={1} adjustsFontSizeToFit>{compactPeso(product.price)}</Text>
+          <Text style={[styles.stock, soldOut && styles.stockOut]} numberOfLines={1}>
             {soldOut ? 'Sold out' : `${product.qty} in stock`}
           </Text>
         </View>
         <TouchableOpacity
           style={[styles.tryOnButton, soldOut && styles.tryOnDisabled]}
           disabled={soldOut}
+          hitSlop={4}
           onPress={(event: GestureResponderEvent) => {
             event.stopPropagation();
             onTryOn();
           }}
         >
-          <Text style={styles.tryOnText}>TRY ON</Text>
+          <Ionicons name="sparkles-outline" size={16} color="#0F4C8A" />
+          <Text style={styles.tryOnText}>Try on</Text>
         </TouchableOpacity>
       </View>
     </TouchableOpacity>
+    </MotiView>
   );
 }
 
 type FilterModalProps = {
   visible: boolean;
   lookups: Lookups;
+  categoryId: number | string | 'all';
   sizeLabel: string | 'all';
   genderId: number | string | 'all';
+  audienceId: number | string | 'all';
   colorFamilyId: number | string | 'all';
   styleId: number | string | 'all';
   inStockOnly: boolean;
+  priceRange: PriceRange;
   sort: SortOption;
+  resultCount: number;
+  onCategoryChange: (value: number | string | 'all') => void;
   onSizeChange: (value: string | 'all') => void;
   onGenderChange: (value: number | string | 'all') => void;
+  onAudienceChange: (value: number | string | 'all') => void;
   onColorFamilyChange: (value: number | string | 'all') => void;
   onStyleChange: (value: number | string | 'all') => void;
   onStockChange: (value: boolean) => void;
+  onPriceRangeChange: (value: PriceRange) => void;
   onSortChange: (value: SortOption) => void;
   onReset: () => void;
   onClose: () => void;
@@ -853,26 +953,89 @@ type FilterModalProps = {
 function FilterModal({
   visible,
   lookups,
+  categoryId,
   sizeLabel,
   genderId,
+  audienceId,
   colorFamilyId,
   styleId,
   inStockOnly,
+  priceRange,
   sort,
+  resultCount,
+  onCategoryChange,
   onSizeChange,
   onGenderChange,
+  onAudienceChange,
   onColorFamilyChange,
   onStyleChange,
   onStockChange,
+  onPriceRangeChange,
   onSortChange,
   onReset,
   onClose,
 }: FilterModalProps) {
+  const [draft, setDraft] = useState<FilterValues>({
+    categoryId,
+    sizeLabel,
+    genderId,
+    audienceId,
+    colorFamilyId,
+    styleId,
+    inStockOnly,
+    priceRange,
+    sort,
+  });
+
+  useEffect(() => {
+    if (!visible) return;
+    setDraft({ categoryId, sizeLabel, genderId, audienceId, colorFamilyId, styleId, inStockOnly, priceRange, sort });
+  }, [audienceId, categoryId, colorFamilyId, genderId, inStockOnly, priceRange, sizeLabel, sort, styleId, visible]);
+
+  const applyFilters = () => {
+    onCategoryChange(draft.categoryId);
+    onSizeChange(draft.sizeLabel);
+    onGenderChange(draft.genderId);
+    onAudienceChange(draft.audienceId);
+    onColorFamilyChange(draft.colorFamilyId);
+    onStyleChange(draft.styleId);
+    onStockChange(draft.inStockOnly);
+    onPriceRangeChange(draft.priceRange);
+    onSortChange(draft.sort);
+    onClose();
+  };
+
+  const resetDraft = () => {
+    const reset: FilterValues = {
+      categoryId: 'all',
+      sizeLabel: 'all',
+      genderId: 'all',
+      audienceId: 'all',
+      colorFamilyId: 'all',
+      styleId: 'all',
+      inStockOnly: true,
+      priceRange: 'all',
+      sort: 'newest',
+    };
+    setDraft(reset);
+    onReset();
+  };
+  const hasDraftChanges =
+    draft.categoryId !== categoryId ||
+    draft.sizeLabel !== sizeLabel ||
+    draft.genderId !== genderId ||
+    draft.audienceId !== audienceId ||
+    draft.colorFamilyId !== colorFamilyId ||
+    draft.styleId !== styleId ||
+    draft.inStockOnly !== inStockOnly ||
+    draft.priceRange !== priceRange ||
+    draft.sort !== sort;
+
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable style={styles.modalBackdrop} onPress={onClose} />
-      <View style={styles.sheet}>
-        <View style={styles.sheetHandle} />
+    <Modal visible={visible} transparent animationType="slide" statusBarTranslucent onRequestClose={onClose}>
+      <View style={styles.filterModalOverlay}>
+        <TouchableOpacity style={styles.filterModalBackdrop} activeOpacity={1} onPress={onClose} />
+        <View style={styles.sheet} accessibilityViewIsModal>
         <View style={styles.sheetHeader}>
           <Text style={styles.sheetTitle}>More filters</Text>
           <TouchableOpacity onPress={onClose} style={styles.iconTap}>
@@ -880,53 +1043,81 @@ function FilterModal({
           </TouchableOpacity>
         </View>
 
-        <ScrollView showsVerticalScrollIndicator={false}>
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.sheetScrollContent} keyboardShouldPersistTaps="handled">
+          <FilterSection title="Category">
+            <Chip label="All" selected={draft.categoryId === 'all'} onPress={() => setDraft((current) => ({ ...current, categoryId: 'all' }))} />
+            {lookups.categories.map((category) => (
+              <Chip
+                key={category.id}
+                label={lookupLabel(category)}
+                selected={draft.categoryId !== 'all' && String(draft.categoryId) === String(category.id)}
+                onPress={() => setDraft((current) => ({ ...current, categoryId: category.id }))}
+              />
+            ))}
+          </FilterSection>
+
           <FilterSection title="Size">
-            <Chip label="All" selected={sizeLabel === 'all'} onPress={() => onSizeChange('all')} />
+            <Chip label="All" selected={draft.sizeLabel === 'all'} onPress={() => setDraft((current) => ({ ...current, sizeLabel: 'all' }))} />
             {lookups.sizes.map((size) => {
               const label = lookupLabel(size);
               return (
                 <Chip
                   key={size.id}
                   label={label}
-                  selected={sizeLabel === label}
-                  onPress={() => onSizeChange(label)}
+                  selected={draft.sizeLabel === label}
+                  onPress={() => setDraft((current) => ({ ...current, sizeLabel: label }))}
                 />
               );
             })}
           </FilterSection>
 
           <FilterSection title="Gender">
-            <Chip label="All" selected={genderId === 'all'} onPress={() => onGenderChange('all')} />
+            <Chip label="All" selected={draft.genderId === 'all'} onPress={() => setDraft((current) => ({ ...current, genderId: 'all' }))} />
             {lookups.genders.map((gender) => (
               <Chip
                 key={gender.id}
                 label={lookupLabel(gender)}
-                selected={genderId !== 'all' && String(genderId) === String(gender.id)}
-                onPress={() => onGenderChange(gender.id)}
+                selected={draft.genderId !== 'all' && String(draft.genderId) === String(gender.id)}
+                onPress={() => setDraft((current) => ({ ...current, genderId: gender.id }))}
               />
             ))}
           </FilterSection>
 
+          <FilterSection title="Audience">
+            <Chip label="All" selected={draft.audienceId === 'all'} onPress={() => setDraft((current) => ({ ...current, audienceId: 'all' }))} />
+            {(lookups.styleAudiences ?? []).map((audience) => <Chip key={audience.id} label={lookupLabel(audience)} selected={draft.audienceId !== 'all' && String(draft.audienceId) === String(audience.id)} onPress={() => setDraft((current) => ({ ...current, audienceId: audience.id }))} />)}
+          </FilterSection>
+
           <FilterSection title="Color">
-            <Chip label="All" selected={colorFamilyId === 'all'} onPress={() => onColorFamilyChange('all')} />
+            <Chip label="All" selected={draft.colorFamilyId === 'all'} onPress={() => setDraft((current) => ({ ...current, colorFamilyId: 'all' }))} />
             {(lookups.colorFamilies ?? []).map((family) => (
               <Chip
                 key={family.id}
                 label={lookupLabel(family)}
-                selected={colorFamilyId !== 'all' && String(colorFamilyId) === String(family.id)}
-                onPress={() => onColorFamilyChange(family.id)}
+                selected={draft.colorFamilyId !== 'all' && String(draft.colorFamilyId) === String(family.id)}
+                onPress={() => setDraft((current) => ({ ...current, colorFamilyId: family.id }))}
               />
             ))}
           </FilterSection>
           <FilterSection title="Fashion Style">
-            <Chip label="All" selected={styleId === 'all'} onPress={() => onStyleChange('all')} />
-            {(lookups.fashionStyles ?? []).map((style) => <Chip key={style.id} label={lookupLabel(style)} selected={styleId !== 'all' && String(styleId) === String(style.id)} onPress={() => onStyleChange(style.id)} />)}
+            <Chip label="All" selected={draft.styleId === 'all'} onPress={() => setDraft((current) => ({ ...current, styleId: 'all' }))} />
+            {(lookups.fashionStyles ?? []).map((style) => <Chip key={style.id} label={lookupLabel(style)} selected={draft.styleId !== 'all' && String(draft.styleId) === String(style.id)} onPress={() => setDraft((current) => ({ ...current, styleId: style.id }))} />)}
           </FilterSection>
 
           <FilterSection title="Availability">
-            <Chip label="In stock" selected={inStockOnly} onPress={() => onStockChange(true)} />
-            <Chip label="Show all" selected={!inStockOnly} onPress={() => onStockChange(false)} />
+            <Chip label="In stock" selected={draft.inStockOnly} onPress={() => setDraft((current) => ({ ...current, inStockOnly: true }))} />
+            <Chip label="Show all" selected={!draft.inStockOnly} onPress={() => setDraft((current) => ({ ...current, inStockOnly: false }))} />
+          </FilterSection>
+
+          <FilterSection title="Price range">
+            {(Object.keys(PRICE_RANGE_LABELS) as PriceRange[]).map((range) => (
+              <Chip
+                key={range}
+                label={PRICE_RANGE_LABELS[range]}
+                selected={draft.priceRange === range}
+                onPress={() => setDraft((current) => ({ ...current, priceRange: range }))}
+              />
+            ))}
           </FilterSection>
 
           <FilterSection title="Sort by">
@@ -934,21 +1125,24 @@ function FilterModal({
               <Chip
                 key={option}
                 label={SORT_LABELS[option]}
-                selected={sort === option}
-                onPress={() => onSortChange(option)}
+                selected={draft.sort === option}
+                onPress={() => setDraft((current) => ({ ...current, sort: option }))}
               />
             ))}
           </FilterSection>
         </ScrollView>
 
         <View style={styles.sheetActions}>
-          <TouchableOpacity style={styles.resetButton} onPress={onReset}>
+          <TouchableOpacity style={styles.resetButton} onPress={resetDraft}>
             <Text style={styles.resetText}>Reset</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.applyButton} onPress={onClose}>
-            <Text style={styles.applyText}>Apply filters</Text>
+          <TouchableOpacity style={styles.applyButton} onPress={applyFilters}>
+            <Text style={styles.applyText}>
+              {hasDraftChanges ? 'Apply filters' : `Show ${resultCount} ${resultCount === 1 ? 'item' : 'items'}`}
+            </Text>
           </TouchableOpacity>
         </View>
+      </View>
       </View>
     </Modal>
   );
@@ -982,13 +1176,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  skeletonScreen: { flex: 1, backgroundColor: Colors.bg.primary, paddingTop: 48 },
+  skeletonHeader: { paddingHorizontal: Spacing.md, gap: Spacing.md },
+  skeletonBrand: { width: 110, height: 28, borderRadius: Radius.full, backgroundColor: '#E5EEF8' },
+  skeletonSearch: { height: 44, borderRadius: Radius.md, backgroundColor: '#E5EEF8' },
+  skeletonBanner: { height: 84, borderRadius: Radius.md, backgroundColor: '#DCEBFA' },
+  skeletonTabs: { width: '72%', height: 34, borderRadius: Radius.full, backgroundColor: '#E5EEF8' },
+  skeletonGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.md, padding: Spacing.md },
+  skeletonCard: { flexGrow: 0 },
   list: {
     paddingHorizontal: Spacing.md,
     paddingTop: Spacing.xl,
-    paddingBottom: Spacing['2xl'],
+    paddingBottom: 98,
   },
   row: {
     gap: Spacing.md,
+    justifyContent: 'flex-start',
   },
   header: {
     marginBottom: Spacing.md,
@@ -1174,6 +1377,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   toneCard: {
+    overflow: 'hidden',
     alignItems: 'center',
     backgroundColor: '#0E4F8D',
     borderColor: '#0E4F8D',
@@ -1185,6 +1389,9 @@ const styles = StyleSheet.create({
     minHeight: 58,
     paddingHorizontal: Spacing.md,
   },
+  toneGlow: { position: 'absolute', width: 148, height: 148, borderRadius: 74, right: -56, top: -58, backgroundColor: 'rgba(129,203,255,0.18)' },
+  toneOrbOne: { position: 'absolute', width: 34, height: 34, borderRadius: 17, right: 28, bottom: -14, backgroundColor: 'rgba(247,202,150,0.40)' },
+  toneOrbTwo: { position: 'absolute', width: 18, height: 18, borderRadius: 9, right: 9, top: 9, backgroundColor: 'rgba(255,255,255,0.34)' },
   toneIcon: {
     alignItems: 'center',
     backgroundColor: '#1A67AB',
@@ -1196,6 +1403,7 @@ const styles = StyleSheet.create({
   toneCopy: {
     flex: 1,
   },
+  bannerEyebrow: { color: 'rgba(234,244,255,0.78)', fontSize: 8, fontWeight: '900', letterSpacing: 0.8, marginBottom: 2 },
   toneTitle: {
     color: "#EAF4FF",
     fontSize: FontSize.sm,
@@ -1214,6 +1422,7 @@ const styles = StyleSheet.create({
     width: 34,
   },
   mixCard: {
+    overflow: 'hidden',
     alignItems: 'center',
     backgroundColor: '#DCEBFA',
     borderColor: '#C9DCF2',
@@ -1225,6 +1434,9 @@ const styles = StyleSheet.create({
     minHeight: 58,
     paddingHorizontal: Spacing.md,
   },
+  mixGlow: { position: 'absolute', right: -40, top: -64, height: 148, width: 148, borderRadius: 74, backgroundColor: 'rgba(255,255,255,0.55)' },
+  mixGrid: { position: 'absolute', right: 12, top: 12, width: 38, height: 38, flexDirection: 'row', flexWrap: 'wrap', gap: 2, transform: [{ rotate: '12deg' }], opacity: 0.9 },
+  mixTile: { width: 18, height: 18, borderRadius: 5 },
   mixIcon: {
     alignItems: 'center',
     backgroundColor: '#0E4F8D',
@@ -1236,6 +1448,7 @@ const styles = StyleSheet.create({
   mixCopy: {
     flex: 1,
   },
+  mixEyebrow: { color: '#0F4C8A', fontSize: 8, fontWeight: '900', letterSpacing: 0.8, marginBottom: 2 },
   mixTitle: {
     color: Colors.text.primary,
     fontSize: FontSize.sm,
@@ -1246,12 +1459,16 @@ const styles = StyleSheet.create({
     fontSize: FontSize.xs,
     fontWeight: '700',
     marginTop: 2,
+    lineHeight: 15,
   },
   tabs: {
+    flexGrow: 1,
     gap: Spacing.md,
+    justifyContent: 'center',
     paddingBottom: Spacing.sm,
   },
   tab: {
+    overflow: 'hidden',
     minWidth: 72,
     height: 34,
     borderRadius: Radius.full,
@@ -1262,6 +1479,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.border.default,
   },
+  tabIndicator: { position: 'absolute', bottom: 0, height: 3, width: 26, borderRadius: Radius.full, backgroundColor: '#A9DBFF' },
   tabActive: {
     backgroundColor: '#0E4F8D',
     borderColor: '#0E4F8D',
@@ -1290,15 +1508,16 @@ const styles = StyleSheet.create({
     marginTop: Spacing.xs,
   },
   card: {
-    flex: 1,
+    width: '100%',
     backgroundColor: '#FFFFFF',
     borderRadius: Radius.md,
     borderWidth: 1,
     borderColor: '#E1EAF5',
     padding: 9,
     marginBottom: Spacing.md,
-    maxWidth: '50%',
+    minHeight: 274,
   },
+  cardMotion: { marginBottom: Spacing.md },
   imageFrame: {
     aspectRatio: 1,
     borderRadius: Radius.sm,
@@ -1317,15 +1536,12 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 6,
     right: 6,
-    width: 26,
-    height: 26,
-    borderRadius: 13,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  heartButtonSaved: {
-    backgroundColor: '#EAF4FF',
   },
   nameRow: {
     flexDirection: 'row',
@@ -1337,20 +1553,8 @@ const styles = StyleSheet.create({
     color: Colors.text.primary,
     fontSize: FontSize.sm,
     fontWeight: '900',
-  },
-  sizePill: {
-    minWidth: 22,
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: '#0E4F8D',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 5,
-  },
-  sizePillText: {
-    color: Colors.white,
-    fontSize: 8,
-    fontWeight: '900',
+    lineHeight: 17,
+    minHeight: 34,
   },
   meta: {
     color: Colors.text.secondary,
@@ -1359,11 +1563,15 @@ const styles = StyleSheet.create({
     minHeight: 14,
   },
   footer: {
-    marginTop: Spacing.xs,
+    marginTop: 'auto',
     flexDirection: 'row',
     alignItems: 'flex-end',
     justifyContent: 'space-between',
     gap: Spacing.xs,
+  },
+  priceBlock: {
+    flex: 1,
+    minWidth: 0,
   },
   price: {
     color: Colors.text.primary,
@@ -1380,21 +1588,23 @@ const styles = StyleSheet.create({
     color: '#B42318',
   },
   tryOnButton: {
-    height: 32,
-    minWidth: 62,
-    borderRadius: 10,
-    backgroundColor: '#0E4F8D',
+    height: 36,
+    flexShrink: 0,
+    borderRadius: Radius.full,
+    backgroundColor: '#E6F0FB',
     alignItems: 'center',
+    flexDirection: 'row',
+    gap: 4,
     justifyContent: 'center',
-    paddingHorizontal: 8,
+    paddingHorizontal: 14,
   },
   tryOnDisabled: {
     opacity: 0.45,
   },
   tryOnText: {
-    color: Colors.white,
-    fontSize: 10,
-    fontWeight: '900',
+    color: '#0F4C8A',
+    fontSize: 13,
+    fontWeight: '700',
   },
   empty: {
     alignItems: 'center',
@@ -1413,33 +1623,30 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: Spacing.xs,
   },
-  modalBackdrop: {
+  filterModalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.58)',
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(7, 28, 52, 0.48)',
   },
-  sheet: {
+  filterModalBackdrop: {
     position: 'absolute',
-    left: 0,
+    top: 0,
     right: 0,
     bottom: 0,
-    maxHeight: '78%',
+    left: 0,
+  },
+  sheet: {
+    maxHeight: '86%',
     backgroundColor: Colors.bg.secondary,
+    paddingHorizontal: Spacing.md,
+    paddingTop: Spacing.xs,
+    paddingBottom: Spacing.md,
     borderTopLeftRadius: Radius.lg,
     borderTopRightRadius: Radius.lg,
-    paddingHorizontal: Spacing.md,
-    paddingTop: Spacing.sm,
-    paddingBottom: Spacing.lg,
     borderWidth: 1,
     borderColor: Colors.border.default,
   },
-  sheetHandle: {
-    alignSelf: 'center',
-    width: 42,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: Colors.border.active,
-    marginBottom: Spacing.md,
-  },
+  sheetScrollContent: { paddingBottom: Spacing.md },
   sheetHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1492,6 +1699,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: Spacing.sm,
     paddingTop: Spacing.md,
+    paddingBottom: Spacing.xs,
   },
   resetButton: {
     flex: 1,

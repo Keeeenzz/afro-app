@@ -104,8 +104,10 @@ function makePhotoPart(photo: ImagePicker.ImagePickerAsset) {
 
 export default function ReviewsScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ productId?: string }>();
+  const params = useLocalSearchParams<{ productId?: string; reviewId?: string; fromProfile?: string }>();
   const productId = Array.isArray(params.productId) ? params.productId[0] : params.productId;
+  const reviewId = Array.isArray(params.reviewId) ? params.reviewId[0] : params.reviewId;
+  const fromProfile = (Array.isArray(params.fromProfile) ? params.fromProfile[0] : params.fromProfile) === '1';
   const { openNav } = useNav();
   const { user, token } = useAuthStore();
 
@@ -119,7 +121,7 @@ export default function ReviewsScreen() {
   const [filter, setFilter] = useState<Filter>('all');
   const [sort, setSort] = useState<Sort>('recent');
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [selectedReviewId, setSelectedReviewId] = useState('');
+  const [selectedReviewId, setSelectedReviewId] = useState(reviewId ?? '');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -334,7 +336,7 @@ export default function ReviewsScreen() {
       <View style={styles.overlay}>
         <Header
           title={selectedReview ? 'Review Details' : showForm ? 'Leave Review' : 'Reviews'}
-          onBack={() => (selectedReview ? setSelectedReviewId('') : router.back())}
+          onBack={() => (selectedReview && !fromProfile ? setSelectedReviewId('') : router.back())}
           onMenu={openNav}
         />
 

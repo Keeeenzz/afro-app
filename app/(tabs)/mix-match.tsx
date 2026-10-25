@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import {
@@ -362,6 +363,8 @@ export default function MixMatchScreen() {
                 onPrevious={() => setTopIndex((current) => wrapIndex(current, tops.length, -1))}
                 onNext={() => setTopIndex((current) => wrapIndex(current, tops.length, 1))}
                 disabled={tops.length <= 1}
+                onSwipeNext={() => setTopIndex((current) => wrapIndex(current, tops.length, 1))}
+                onSwipePrevious={() => setTopIndex((current) => wrapIndex(current, tops.length, -1))}
               />
 
               <CarouselSlot
@@ -370,6 +373,8 @@ export default function MixMatchScreen() {
                 onPrevious={() => setBottomIndex((current) => wrapIndex(current, bottoms.length, -1))}
                 onNext={() => setBottomIndex((current) => wrapIndex(current, bottoms.length, 1))}
                 disabled={bottoms.length <= 1}
+                onSwipeNext={() => setBottomIndex((current) => wrapIndex(current, bottoms.length, 1))}
+                onSwipePrevious={() => setBottomIndex((current) => wrapIndex(current, bottoms.length, -1))}
               />
             </>
           ) : null}
@@ -382,6 +387,8 @@ export default function MixMatchScreen() {
                 onPrevious={() => setDressIndex((current) => wrapIndex(current, dresses.length, -1))}
                 onNext={() => setDressIndex((current) => wrapIndex(current, dresses.length, 1))}
                 disabled={dresses.length <= 1}
+                onSwipeNext={() => setDressIndex((current) => wrapIndex(current, dresses.length, 1))}
+                onSwipePrevious={() => setDressIndex((current) => wrapIndex(current, dresses.length, -1))}
               />
 
               <CarouselSlot
@@ -390,6 +397,8 @@ export default function MixMatchScreen() {
                 onPrevious={() => setShirtIndex((current) => wrapIndex(current, tops.length, -1))}
                 onNext={() => setShirtIndex((current) => wrapIndex(current, tops.length, 1))}
                 disabled={tops.length <= 1}
+                onSwipeNext={() => setShirtIndex((current) => wrapIndex(current, tops.length, 1))}
+                onSwipePrevious={() => setShirtIndex((current) => wrapIndex(current, tops.length, -1))}
               />
             </>
           ) : null}
@@ -402,6 +411,8 @@ export default function MixMatchScreen() {
                 onPrevious={() => setDressIndex((current) => wrapIndex(current, dresses.length, -1))}
                 onNext={() => setDressIndex((current) => wrapIndex(current, dresses.length, 1))}
                 disabled={dresses.length <= 1}
+                onSwipeNext={() => setDressIndex((current) => wrapIndex(current, dresses.length, 1))}
+                onSwipePrevious={() => setDressIndex((current) => wrapIndex(current, dresses.length, -1))}
               />
 
               <CarouselSlot
@@ -410,11 +421,15 @@ export default function MixMatchScreen() {
                 onPrevious={() => setBottomIndex((current) => wrapIndex(current, bottoms.length, -1))}
                 onNext={() => setBottomIndex((current) => wrapIndex(current, bottoms.length, 1))}
                 disabled={bottoms.length <= 1}
+                onSwipeNext={() => setBottomIndex((current) => wrapIndex(current, bottoms.length, 1))}
+                onSwipePrevious={() => setBottomIndex((current) => wrapIndex(current, bottoms.length, -1))}
               />
             </>
           ) : null}
 
         </View>
+
+        <LiveOutfitPreview products={mixMode === 'top_bottom' ? [selectedTop, selectedBottom] : mixMode === 'dress_top' ? [selectedDress, selectedShirt] : [selectedDress, selectedBottom]} />
 
         <Text style={styles.sectionTitle}>{t('Selected items')}</Text>
         <View style={styles.selectedList}>
@@ -458,12 +473,16 @@ function CarouselSlot({
   onPrevious,
   onNext,
   disabled,
+  onSwipeNext,
+  onSwipePrevious,
 }: {
   product: Product | null;
   emptyText: string;
   onPrevious: () => void;
   onNext: () => void;
   disabled: boolean;
+  onSwipeNext: () => void;
+  onSwipePrevious: () => void;
 }) {
   const uri = imageUrl(product?.imageUrl);
 
@@ -478,7 +497,7 @@ function CarouselSlot({
         <Ionicons name="chevron-back" size={24} color={Colors.text.primary} />
       </TouchableOpacity>
 
-      <View style={styles.itemDisplay}>
+      <GestureDetector gesture={Gesture.Pan().runOnJS(true).onEnd((event) => { if (!disabled && Math.abs(event.translationX) > 35) event.translationX < 0 ? onSwipeNext() : onSwipePrevious(); })}><View style={styles.itemDisplay}>
         {product ? (
           <>
             <View style={styles.imagePanel}>
@@ -495,7 +514,7 @@ function CarouselSlot({
             <Text style={styles.emptyText}>{emptyText}</Text>
           </View>
         )}
-      </View>
+      </View></GestureDetector>
 
       <TouchableOpacity
         style={[styles.arrowButton, disabled && styles.arrowButtonDisabled]}
@@ -507,6 +526,11 @@ function CarouselSlot({
       </TouchableOpacity>
     </View>
   );
+}
+
+function LiveOutfitPreview({ products }: { products: Array<Product | null> }) {
+  const visible = products.filter((product): product is Product => Boolean(product));
+  return <View style={styles.livePreview}><View><Text style={styles.livePreviewEyebrow}>LIVE OUTFIT PREVIEW</Text><Text style={styles.livePreviewTitle}>{visible.length ? 'Your selected pieces together' : 'Choose pieces to begin'}</Text></View><View style={styles.livePreviewStack}>{visible.map((product, index) => { const uri = imageUrl(product.imageUrl); return <View key={product.id} style={[styles.livePreviewImageWrap, { left: index * 26, zIndex: visible.length - index }]}>{uri ? <Image source={{ uri }} style={styles.livePreviewImage} resizeMode="contain" /> : <Ionicons name="shirt-outline" size={22} color={Colors.text.secondary} />}</View>; })}</View></View>;
 }
 
 function SelectedRow({ label, product }: { label: string; product: Product | null }) {
@@ -744,6 +768,12 @@ const styles = StyleSheet.create({
     gap: Spacing.xs,
     paddingVertical: Spacing.sm,
   },
+  livePreview: { minHeight: 92, borderRadius: Radius.md, borderWidth: 1, borderColor: '#C9DCF2', backgroundColor: '#EEF5FD', padding: Spacing.md, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: Spacing.md },
+  livePreviewEyebrow: { color: Colors.brand.blue, fontSize: 9, fontWeight: '900', letterSpacing: 0.7 },
+  livePreviewTitle: { color: Colors.text.primary, fontSize: FontSize.sm, fontWeight: '900', marginTop: 4, maxWidth: 160 },
+  livePreviewStack: { width: 92, height: 64, position: 'relative' },
+  livePreviewImageWrap: { position: 'absolute', top: 0, width: 58, height: 64, borderRadius: Radius.sm, overflow: 'hidden', alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.border.default },
+  livePreviewImage: { width: '92%', height: '92%' },
   slot: {
     alignItems: 'center',
     flexDirection: 'row',

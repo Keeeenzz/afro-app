@@ -15,6 +15,8 @@ import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { StepIndicator } from '@/components/auth/StepIndicator';
 import { useAuthStore } from '@/hooks/useAuthStore';
 import { Colors, FontSize, Spacing } from '@/constants/theme';
+import { MotiView } from 'moti';
+import * as Haptics from 'expo-haptics';
 
 const rules = [
   { label: 'At least 8 characters', test: (p: string) => p.length >= 8 },
@@ -64,6 +66,7 @@ export default function PasswordPage() {
 
   const handleContinue = () => {
     if (!validate()) return;
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setDraft({ password });
     router.push('/(auth)/customize-feed');
   };
@@ -112,12 +115,12 @@ export default function PasswordPage() {
             {rules.map((rule, i) => {
               const passed = rule.test(password);
               return (
-                <View key={i} style={styles.rule}>
+                <MotiView key={i} animate={{ opacity: passed ? 1 : 0.58, translateX: passed ? 0 : -2 }} transition={{ type: 'spring', damping: 14 }} style={styles.rule}>
                   <View style={[styles.ruleDot, passed && styles.ruleDotPass]} />
                   <Text style={[styles.ruleText, passed && styles.ruleTextPass]}>
                     {rule.label}
                   </Text>
-                </View>
+                </MotiView>
               );
             })}
           </View>

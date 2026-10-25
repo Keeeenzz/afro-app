@@ -13,6 +13,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { MotiView } from 'moti';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { apiGet, apiPost, imageUrl } from '@/lib/api';
 import { Colors, FontSize, Radius, Spacing } from '@/constants/theme';
@@ -400,11 +401,12 @@ export default function OrdersScreen() {
                 ['Delivered', selectedHead.expectedDeliveryAt],
               ].map(([label, date], index) => {
                 const complete = timelineStatus(selectedHead.status) >= index + 1;
+                const current = timelineStatus(selectedHead.status) === index + 1;
                 return (
                   <View key={label} style={styles.timelineRow}>
-                    <View style={[styles.timelineDot, complete && styles.timelineDotComplete]}>
+                    <MotiView animate={current ? { scale: [1, 1.23, 1] } : { scale: 1 }} transition={current ? { type: 'timing', duration: 1150, loop: true } : { type: 'timing', duration: 1 }} style={[styles.timelineDot, complete && styles.timelineDotComplete, current && styles.timelineDotCurrent]}>
                       <Ionicons name="checkmark" size={13} color={complete ? Colors.text.primary : Colors.text.muted} />
-                    </View>
+                    </MotiView>
                     {index < 6 ? <View style={[styles.timelineLine, complete && styles.timelineLineComplete]} /> : null}
                     <View style={styles.timelineTextWrap}>
                       <Text style={styles.timelineHint}>
@@ -703,6 +705,7 @@ const styles = StyleSheet.create({
     zIndex: 2,
   },
   timelineDotComplete: { backgroundColor: Colors.brand.blue },
+  timelineDotCurrent: { borderColor: '#7BC7FF', borderWidth: 3, shadowColor: Colors.brand.blue, shadowOpacity: 0.34, shadowRadius: 8, elevation: 4 },
   timelineLine: {
     position: 'absolute',
     left: 13,

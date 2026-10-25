@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   RefreshControl,
@@ -22,6 +23,9 @@ import { Colors, FontSize, Radius, Spacing } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/useAuthStore';
 import { useNav } from '@/context/NavContext';
 import { useTranslation } from '@/lib/i18n';
+import { MotiView } from 'moti';
+import * as Haptics from 'expo-haptics';
+import { useToast } from '@/components/ui/Toast';
 
 type ChatMessage = {
   id: string;
@@ -79,7 +83,10 @@ export default function MessagesScreen() {
   const { t } = useTranslation();
   const { conversationId, startAi } = useLocalSearchParams<{ conversationId?: string; startAi?: string }>();
   const { user, token } = useAuthStore();
+  const { showToast } = useToast();
   const scrollRef = useRef<ScrollView>(null);
+  const composerRef = useRef<TextInput>(null);
+  const keyboardVisibleRef = useRef(false);
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeId, setActiveId] = useState<string | null>(conversationId ?? null);
@@ -138,6 +145,19 @@ export default function MessagesScreen() {
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
   }, [activeId, conversations]);
 
+  useEffect(() => {
+    const didShow = Keyboard.addListener('keyboardDidShow', () => {
+      keyboardVisibleRef.current = true;
+    });
+    const didHide = Keyboard.addListener('keyboardDidHide', () => {
+      keyboardVisibleRef.current = false;
+    });
+    return () => {
+      didShow.remove();
+      didHide.remove();
+    };
+  }, []);
+
   const activeConversation = conversations.find((item) => item.id === activeId) ?? null;
   const activeIsAi = isAiConversation(activeConversation);
 
@@ -191,6 +211,27 @@ export default function MessagesScreen() {
     }
   };
 
+  const focusComposer = (afterLayout = false) => {
+    const focus = () => composerRef.current?.focus();
+    if (afterLayout) {
+      // The support-mode response replaces the active conversation object.
+      // Wait for the composer to be committed before requesting focus.
+      setTimeout(focus, 160);
+      return;
+    }
+
+    if (keyboardVisibleRef.current) {
+      focus();
+      return;
+    }
+
+    // Android keeps a TextInput focused after the Back button dismisses its
+    // keyboard. Refocusing an already-focused input is ignored, so reset its
+    // native focus first and then restore it on the next frame.
+    composerRef.current?.blur();
+    requestAnimationFrame(focus);
+  };
+
   const sendMessage = async (quickPrompt?: string) => {
     const text = (quickPrompt ?? draft).trim();
     if (!text || !activeConversation || !user?.user_id || sending) return;
@@ -213,10 +254,17 @@ export default function MessagesScreen() {
         return [updated, ...next];
       });
       setActiveId(updated.id);
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       runChatbotAction(updated.chatbot?.action, updated.chatbot?.orderId);
+      if (updated.chatbot?.action === 'TRANSFER_TO_AGENT' || /^talk to (an )?agent$/i.test(text)) {
+        focusComposer(true);
+      }
     } catch (err) {
       setDraft(text);
-      setError(err instanceof Error ? err.message : 'Could not send message.');
+      const message = err instanceof Error ? err.message : 'Could not send message.';
+      setError(message);
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      showToast(message, 'error');
     } finally {
       setSending(false);
     }
@@ -484,7 +532,7 @@ if (isAiConversation(selectedConversation ?? null)) {
             {activeConversation.messages.map((message) => {
               const fromCustomer = message.from === 'customer';
               return (
-                <View key={message.id} style={[styles.messageRow, fromCustomer && styles.messageRowCustomer]}>
+                <MotiView key={message.id} from={{ opacity: 0, translateY: 8, scale: 0.98 }} animate={{ opacity: 1, translateY: 0, scale: 1 }} transition={{ type: 'timing', duration: 180 }} style={[styles.messageRow, fromCustomer && styles.messageRowCustomer]}>
                   {!fromCustomer ? <Avatar /> : null}
                   <View style={[styles.messageBubble, fromCustomer ? styles.customerBubble : styles.adminBubble]}>
                     {message.text.startsWith('/uploads/messages/') ? <Image source={{ uri: imageUrl(message.text) ?? message.text }} style={styles.messageImage} resizeMode="cover" /> : <Text style={[styles.messageText, fromCustomer && styles.customerMessageText]}>{message.text}</Text>}
@@ -493,9 +541,10 @@ if (isAiConversation(selectedConversation ?? null)) {
                       {fromCustomer ? `  ${message.isRead ? `Read at ${message.readAt || message.time}` : 'Delivered'}` : ''}
                     </Text>
                   </View>
-                </View>
+                </MotiView>
               );
             })}
+            {sending ? <TypingIndicator /> : null}
             {activeIsAi && activeConversation.chatbot?.quickActions?.length ? (
               <View style={styles.chatbotActions}>
                 {activeConversation.chatbot.quickActions.map((action) => (
@@ -514,12 +563,18 @@ if (isAiConversation(selectedConversation ?? null)) {
               <Ionicons name="attach-outline" size={22} color={Colors.text.primary} />
             </TouchableOpacity>
             <TextInput
+              ref={composerRef}
               style={styles.input}
               value={draft}
               onChangeText={setDraft}
               placeholder={activeIsAi ? 'Message AI Assistant...' : "Message A'FRO Support..."}
               placeholderTextColor="#D5E8F8"
               multiline
+              blurOnSubmit={false}
+              onPressIn={() => focusComposer()}
+              onFocus={() => {
+                keyboardVisibleRef.current = true;
+              }}
             />
             <TouchableOpacity
               style={[styles.sendButton, (!draft.trim() || sending) && styles.sendButtonDisabled]}
@@ -698,6 +753,10 @@ if (isAiConversation(selectedConversation ?? null)) {
       )}
     </KeyboardAvoidingView>
   );
+}
+
+function TypingIndicator() {
+  return <View style={styles.typingRow}><Avatar /><View style={styles.typingBubble}>{[0, 1, 2].map((dot) => <MotiView key={dot} from={{ translateY: 0, opacity: 0.4 }} animate={{ translateY: -4, opacity: 1 }} transition={{ type: 'timing', duration: 420, delay: dot * 110, loop: true }} style={styles.typingDot} />)}</View></View>;
 }
 
 function Avatar({ label = "A'F" }: { label?: string }) {
@@ -1060,6 +1119,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
   },
+  typingRow: { flexDirection: 'row', alignItems: 'flex-end', gap: Spacing.sm, paddingRight: Spacing.xl },
+  typingBubble: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: Spacing.md, height: 36, borderRadius: Radius.full, backgroundColor: '#EAF2FC' },
+  typingDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: Colors.brand.blue },
   adminBubble: { backgroundColor: '#EAF4FF' },
   customerBubble: {
     backgroundColor: Colors.brand.blue,

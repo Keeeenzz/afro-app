@@ -1,14 +1,16 @@
 import React, { useRef } from 'react';
 import { View, TextInput, StyleSheet, NativeSyntheticEvent, TextInputKeyPressEventData } from 'react-native';
 import { Colors, FontSize, Radius } from '@/constants/theme';
+import { MotiView } from 'moti';
 
 interface OTPInputProps {
   length?: number;
   value: string;
   onChange: (val: string) => void;
+  error?: boolean;
 }
 
-export function OTPInput({ length = 6, value, onChange }: OTPInputProps) {
+export function OTPInput({ length = 6, value, onChange, error = false }: OTPInputProps) {
   const inputs = useRef<(TextInput | null)[]>([]);
   const digits = value.split('').concat(Array(length).fill('')).slice(0, length);
 
@@ -30,7 +32,7 @@ export function OTPInput({ length = 6, value, onChange }: OTPInputProps) {
   };
 
   return (
-    <View style={styles.container}>
+    <MotiView key={error ? 'error' : 'normal'} from={{ translateX: error ? -9 : 0 }} animate={{ translateX: 0 }} transition={{ type: 'timing', duration: 240 }} style={styles.container}>
       {digits.map((digit, i) => (
         <TextInput
           key={i}
@@ -46,7 +48,7 @@ export function OTPInput({ length = 6, value, onChange }: OTPInputProps) {
           textAlign="center"
         />
       ))}
-    </View>
+    </MotiView>
   );
 }
 

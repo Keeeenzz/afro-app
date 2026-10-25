@@ -49,7 +49,9 @@ export async function apiRequest<T>(path: string, options: ApiOptions = {}): Pro
   if (!response.ok) {
     const error = await response.json().catch(() => null) as Record<string, unknown> | null;
     throw new ApiError(
-      typeof error?.message === 'string' ? error.message : `API request failed: ${response.status}`,
+      typeof error?.message === 'string'
+        ? `${error.message} (${options.method ?? 'GET'} ${path})`
+        : `API request failed: ${response.status} (${options.method ?? 'GET'} ${path})`,
       response.status,
       error,
     );
@@ -99,7 +101,9 @@ export async function apiPostForm<T>(path: string, form: FormData, token?: strin
       if (request.status < 200 || request.status >= 300) {
         const error = data as Record<string, unknown> | null;
         reject(new ApiError(
-          typeof error?.message === 'string' ? error.message : `API request failed: ${request.status}`,
+          typeof error?.message === 'string'
+            ? `${error.message} (POST ${path})`
+            : `API request failed: ${request.status} (POST ${path})`,
           request.status,
           error,
         ));

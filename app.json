@@ -5,7 +5,6 @@
     "scheme": "afro-app",
     "version": "1.0.0",
     "orientation": "portrait",
-    "jsEngine": "jsc",
     "icon": "./assets/afro-logo-black.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
@@ -33,7 +32,8 @@
       "expo-status-bar",
       "expo-splash-screen",
       "expo-notifications",
-      "expo-location"
+      "expo-location",
+      "expo-image"
     ]
   }
 }

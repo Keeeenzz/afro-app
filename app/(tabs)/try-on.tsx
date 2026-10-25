@@ -1,7 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
+import { Image as ExpoImage } from 'expo-image';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 import * as MediaLibrary from 'expo-media-library/legacy';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -12,10 +14,12 @@ import {
   Modal,
   SafeAreaView,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
+  type ImageSourcePropType,
   View,
 } from 'react-native';
 import { apiGet } from '@/lib/api';
@@ -36,6 +40,19 @@ import { useAuthStore } from '@/hooks/useAuthStore';
 import { useTranslation } from '@/lib/i18n';
 import { useTryOnJobStore } from '@/hooks/useTryOnJobStore';
 import { useNav } from '@/context/NavContext';
+import { MotiView } from 'moti';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Reanimated, {
+  cancelAnimation,
+  Easing,
+  interpolate,
+  useAnimatedStyle,
+  useSharedValue,
+  withDelay,
+  withRepeat,
+  withSequence,
+  withTiming,
+} from 'react-native-reanimated';
 
 type TryOnPhase = 'upload' | 'generating' | 'result';
 type PhotoGuideMode = 'full' | 'top';
@@ -582,7 +599,7 @@ function FitReport({
   const activeIndex = Math.min(reportIndex, reports.length - 1);
   const activeReport = reports[activeIndex];
   const lines = reportLines(activeReport.text);
-  const [headline, summary, ...details] = lines;
+  const [headline, , ...details] = lines;
   const product = details.find((line) => line.startsWith('Product:'));
   const garmentType = details.find((line) => line.startsWith('Static garment type:'));
   const productSize = details.find((line) => line.startsWith('Static product size:'));
@@ -651,26 +668,7 @@ function FitReport({
           </TouchableOpacity>
         </View>
       </View>
-      <View style={styles.fitSummaryCard}>
-        <View style={styles.fitSummaryIcon}>
-          <Ionicons name="body-outline" size={20} color={Colors.brand.blue} />
-        </View>
-        <View style={styles.fitSummaryCopy}>
-          {headline ? <Text style={styles.reportHeadline}>{headline}</Text> : null}
-          {summary ? <Text style={styles.reportSummary}>{summary}</Text> : null}
-        </View>
-      </View>
-      {fitScore !== null ? (
-        <>
-          <View style={styles.confidenceRow}>
-            <Text style={styles.confidenceLabel}>Fit score</Text>
-            <Text style={styles.confidenceValue}>{fitScore}/100</Text>
-          </View>
-          <View style={styles.confidenceTrack}>
-            <View style={[styles.confidenceFill, { width: `${fitScore}%` }]} />
-          </View>
-        </>
-      ) : null}
+      {fitScore !== null ? <FitScoreGauge score={fitScore} /> : null}
 
       {metaItems.length ? (
         <View style={styles.reportMetaList}>
@@ -697,10 +695,10 @@ function FitReport({
             const isOpen = !!openReasons[key];
             const { label, value } = splitLabelValue(section.title);
             return (
-              <View key={key} style={styles.reportSection}>
+              <MotiView key={key} animate={{ backgroundColor: isOpen ? '#F4F8FE' : '#FFFFFF' }} transition={{ type: 'timing', duration: 180 }} style={styles.reportSection}>
                 <View style={styles.reportSectionHeading}>
                   <Text style={styles.reportSectionTitle}>{label}</Text>
-                  {value ? <Text style={styles.fitStatus}>{value}</Text> : null}
+                  {value ? <Text style={[styles.fitStatus, value.toLowerCase().includes('good') ? styles.fitStatusGood : value.toLowerCase().includes('tight') ? styles.fitStatusTight : styles.fitStatusLoose]}>{value}</Text> : null}
                 </View>
                 <TouchableOpacity
                   style={styles.whyResultButton}
@@ -710,20 +708,54 @@ function FitReport({
                   <Text style={styles.whyResultText}>Why this result</Text>
                   <Ionicons name={isOpen ? 'chevron-up' : 'chevron-down'} size={16} color={Colors.text.secondary} />
                 </TouchableOpacity>
-                {isOpen ? (
-                  <Text style={styles.reportReasonText}>
+                {isOpen ? (<MotiView from={{ opacity: 0, translateY: -5 }} animate={{ opacity: 1, translateY: 0 }} transition={{ type: 'timing', duration: 160 }}><Text style={styles.reportReasonText}>
                     {section.reasons.length
                       ? section.reasons.join(' ')
                       : 'This result is based on your saved measurements and the selected garment details.'}
-                  </Text>
-                ) : null}
-              </View>
+                  </Text></MotiView>) : null}
+              </MotiView>
             );
           })}
         </View>
       ) : null}
     </View>
   );
+}
+
+function FitScoreGauge({ score }: { score: number }) {
+  const color = score >= 80 ? Colors.status.success : score >= 60 ? Colors.status.warning : Colors.status.error;
+  return <View style={styles.gaugeRow}><MotiView from={{ scale: 0.72, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ type: 'spring', damping: 13 }} style={[styles.gauge, { borderColor: color }]}><Text style={[styles.gaugeValue, { color }]}>{score}</Text><Text style={styles.gaugeSuffix}>/100</Text></MotiView><View style={styles.gaugeCopy}><Text style={styles.confidenceLabel}>Fit score</Text><Text style={styles.gaugeCaption}>{score >= 80 ? 'A promising measurement match' : score >= 60 ? 'Worth checking the measurements' : 'Review fit details before buying'}</Text></View></View>;
+}
+
+function BeforeAfterSlider({
+  beforeUri,
+  afterSource,
+  onOpenFullSize,
+  fullScreen = false,
+}: {
+  beforeUri: string;
+  afterSource: ImageSourcePropType | null;
+  onOpenFullSize: () => void;
+  fullScreen?: boolean;
+}) {
+  const [width, setWidth] = useState(1);
+  const [position, setPosition] = useState(52);
+  const pan = Gesture.Pan().runOnJS(true).onUpdate((event) => {
+    const next = Math.max(4, Math.min(96, (event.x / width) * 100));
+    setPosition(next);
+  });
+  const openFullSize = Gesture.Tap().runOnJS(true).onEnd(onOpenFullSize);
+  const comparisonGesture = fullScreen ? pan : Gesture.Exclusive(pan, openFullSize);
+  if (!afterSource) return null;
+  return <GestureDetector gesture={comparisonGesture}><View style={[styles.compareBox, fullScreen && styles.fullCompareBox]} onLayout={(event) => setWidth(event.nativeEvent.layout.width)} accessibilityRole="button" accessibilityLabel={fullScreen ? 'Full-size before and try-on image comparison. Swipe to compare.' : 'Compare before and try-on images. Swipe to compare or tap to view full size.'}><Image source={{ uri: beforeUri }} style={styles.compareImage} resizeMode="cover" /><View pointerEvents="none" style={[styles.afterClip, { width: `${position}%` }]}><Image source={afterSource} style={[styles.compareImage, { width }]} resizeMode="cover" /></View><View pointerEvents="none" style={[styles.compareHandle, { left: `${position}%` }]}><View style={styles.compareHandleLine} /><View style={styles.compareKnob}><Ionicons name="swap-horizontal" size={16} color={Colors.white} /></View></View><View pointerEvents="none" style={styles.compareBefore}><Text style={styles.compareLabel}>BEFORE</Text></View><View pointerEvents="none" style={styles.compareAfter}><Text style={styles.compareLabel}>TRY-ON</Text></View>{!fullScreen ? <View pointerEvents="none" style={styles.compareExpandHint}><Ionicons name="expand-outline" size={13} color={Colors.white} /><Text style={styles.expandHintText}>Tap to view full size</Text></View> : null}</View></GestureDetector>;
+}
+
+function PinchResultPreview({ source }: { source: ImageSourcePropType }) {
+  const scale = useSharedValue(1);
+  const base = useSharedValue(1);
+  const pinch = Gesture.Pinch().onUpdate((event) => { scale.value = Math.max(1, Math.min(3, base.value * event.scale)); }).onEnd(() => { base.value = scale.value; });
+  const animatedStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+  return <GestureDetector gesture={pinch}><Reanimated.Image source={source} style={[styles.fullPreviewImage, animatedStyle]} resizeMode="contain" /></GestureDetector>;
 }
 
 function MeasurementInput({
@@ -786,19 +818,28 @@ export default function TryOnScreen() {
   const [portraitAspectRatio, setPortraitAspectRatio] = useState(1);
   const [generationMessageIndex, setGenerationMessageIndex] = useState(0);
   const [resultPreviewOpen, setResultPreviewOpen] = useState(false);
+  const [resultPreviewMode, setResultPreviewMode] = useState<'image' | 'comparison'>('image');
+  const [photoFrameHeight, setPhotoFrameHeight] = useState(0);
   const loadingDotScales = useRef([new Animated.Value(1), new Animated.Value(1), new Animated.Value(1)]).current;
   const progressAnim = useRef(new Animated.Value(0)).current;
-  const scanAnim = useRef(new Animated.Value(0)).current;
   const generationMessageOpacity = useRef(new Animated.Value(1)).current;
   const mountedRef = useRef(true);
-  const progressFillWidth = progressAnim.interpolate({
-    inputRange: [0, 100],
-    outputRange: ['0%', '100%'],
-  });
-  const scanTranslateY = scanAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [-280, 280],
-  });
+  const scanProgress = useSharedValue(0);
+  const scanBandStyle = useAnimatedStyle(
+    () => ({
+      opacity: interpolate(scanProgress.value, [0, 0.12, 0.88, 1], [0, 1, 1, 0]),
+      transform: [
+        {
+          translateY: interpolate(
+            scanProgress.value,
+            [0, 1],
+            [-(photoFrameHeight * 0.38), photoFrameHeight],
+          ),
+        },
+      ],
+    }),
+    [photoFrameHeight],
+  );
 
   const animateGenerationProgress = useCallback((value: number, duration = 360) => {
     const nextValue = Math.min(100, Math.max(0, Math.round(value)));
@@ -819,16 +860,21 @@ export default function TryOnScreen() {
 
   useEffect(() => {
     if (phase !== 'generating') {
-      scanAnim.stopAnimation();
-      scanAnim.setValue(0);
+      cancelAnimation(scanProgress);
+      scanProgress.value = 0;
       generationMessageOpacity.setValue(1);
       return;
     }
 
-    const scanLoop = Animated.loop(
-      Animated.timing(scanAnim, { toValue: 1, duration: 1900, useNativeDriver: true }),
+    scanProgress.value = 0;
+    scanProgress.value = withRepeat(
+      withSequence(
+        withTiming(1, { duration: 2200, easing: Easing.inOut(Easing.cubic) }),
+        withDelay(400, withTiming(0, { duration: 0 })),
+      ),
+      -1,
+      false,
     );
-    scanLoop.start();
     const messageTimer = setInterval(() => {
       Animated.sequence([
         Animated.timing(generationMessageOpacity, { toValue: 0.25, duration: 170, useNativeDriver: true }),
@@ -838,10 +884,10 @@ export default function TryOnScreen() {
     }, 3200);
 
     return () => {
-      scanLoop.stop();
+      cancelAnimation(scanProgress);
       clearInterval(messageTimer);
     };
-  }, [generationMessageOpacity, phase, scanAnim]);
+  }, [generationMessageOpacity, phase, scanProgress]);
 
   useEffect(() => {
     if (tryOnJob.status === 'idle') return;
@@ -1449,34 +1495,55 @@ export default function TryOnScreen() {
 
           {phase === 'generating' ? (
             <View style={styles.generatingWrap}>
-              <View style={styles.personPreviewBox}>
-                {personUri ? <Image source={{ uri: personUri }} style={styles.personPreview} resizeMode="contain" /> : null}
-                <Animated.View
+              <View style={styles.personPreviewBox} onLayout={(event) => setPhotoFrameHeight(event.nativeEvent.layout.height)}>
+                {personUri ? <ExpoImage source={{ uri: personUri }} style={styles.personPreview} contentFit="cover" contentPosition="top" /> : null}
+                <Reanimated.View
                   pointerEvents="none"
-                  style={[styles.scanLine, { transform: [{ translateY: scanTranslateY }] }]}
-                />
-                <View style={styles.scanLabel}>
-                  <View style={styles.scanLabelDot} />
-                  <Text style={styles.scanLabelText}>Scanning your photo</Text>
-                </View>
+                  style={[styles.scanBand, scanBandStyle]}
+                >
+                  <LinearGradient
+                    colors={[
+                      'rgba(46,128,214,0)',
+                      'rgba(46,128,214,0.06)',
+                      'rgba(46,128,214,0.20)',
+                      'rgba(110,185,255,0.42)',
+                      'rgba(190,225,255,0.85)',
+                    ]}
+                    locations={[0, 0.4, 0.75, 0.93, 1]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 0, y: 1 }}
+                    style={StyleSheet.absoluteFill}
+                  />
+                  <View style={styles.scanLeadingLine} />
+                  <LinearGradient
+                    pointerEvents="none"
+                    colors={['rgba(120,190,255,0.35)', 'rgba(120,190,255,0)']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 0, y: 1 }}
+                    style={styles.scanLeadingGlow}
+                  />
+                </Reanimated.View>
+                <View pointerEvents="none" style={[styles.viewfinder, styles.viewfinderTL]} /><View pointerEvents="none" style={[styles.viewfinder, styles.viewfinderTR]} /><View pointerEvents="none" style={[styles.viewfinder, styles.viewfinderBL]} /><View pointerEvents="none" style={[styles.viewfinder, styles.viewfinderBR]} />
               </View>
+              <View style={styles.garmentChip}>{selectedProducts[0]?.imageUrl ? <Image source={{ uri: resolvedProductImageUri(selectedProducts[0].imageUrl) }} style={styles.garmentThumb} /> : <View style={styles.garmentThumb} />}<Text style={styles.garmentLabel} numberOfLines={1}>{selectedProducts[0]?.name ?? 'Selected garment'} · {selectedProducts[0]?.size ?? 'Size not set'}</Text></View>
               <Text style={styles.generatingTitle}>Fitting your look</Text>
-              <Animated.Text style={[styles.generatingStepText, { opacity: generationMessageOpacity }]}>
+              <Animated.Text accessibilityLiveRegion="polite" style={[styles.generatingStepText, { opacity: generationMessageOpacity }]}>
                 {generationMessages[generationMessageIndex]}
               </Animated.Text>
-              <Text style={styles.generatingText}>This may take a moment. Your fit preview is on its way.</Text>
-              <View style={styles.dots}>
-                {loadingDotScales.map((dotScale, index) => (
-                  <Animated.View
-                    key={index}
-                    style={[styles.dot, { transform: [{ scaleX: dotScale }, { scaleY: dotScale }] }]}
-                  />
-                ))}
-              </View>
+              <Text style={styles.generatingText}>Usually takes 20-40 seconds.</Text>
               <View style={styles.progressPercentTrack}>
-                <Animated.View style={[styles.progressPercentFill, { width: progressFillWidth }]} />
+                {generationProgress > 0 ? (
+                  <View
+                    style={[
+                      styles.progressPercentFill,
+                      { width: `${Math.min(100, Math.max(0, generationProgress))}%` },
+                    ]}
+                  />
+                ) : (
+                  <View style={styles.indeterminateFill} />
+                )}
               </View>
-              <Text style={styles.generatingFootnote}>{generationProgress}% complete</Text>
+              <Text style={styles.generatingFootnote}>{generationProgress > 0 ? `${generationProgress}% complete` : 'Preparing your fit'}</Text>
               <TouchableOpacity
                 style={styles.backgroundBrowseButton}
                 onPress={() => router.push('/(tabs)/catalog')}
@@ -1499,7 +1566,11 @@ export default function TryOnScreen() {
 
               <TouchableOpacity
                 style={styles.resultImageBox}
-                onPress={() => resultImageSource && setResultPreviewOpen(true)}
+                onPress={() => {
+                  if (!resultImageSource) return;
+                  setResultPreviewMode('image');
+                  setResultPreviewOpen(true);
+                }}
                 activeOpacity={0.9}
               >
                 {resultImageSource ? (
@@ -1513,6 +1584,8 @@ export default function TryOnScreen() {
                 </View>
               </TouchableOpacity>
 
+              {personUri ? <BeforeAfterSlider beforeUri={personUri} afterSource={resultImageSource} onOpenFullSize={() => { setResultPreviewMode('comparison'); setResultPreviewOpen(true); }} /> : null}
+
               <View style={styles.resultActions}>
                 <TouchableOpacity style={styles.smallAction} onPress={saveGeneratedImage} disabled={savingImage}>
                   {savingImage ? (
@@ -1522,9 +1595,9 @@ export default function TryOnScreen() {
                   )}
                   <Text style={styles.smallActionText}>Save</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.smallAction}>
-                  <Ionicons name="heart-outline" size={15} color={Colors.text.primary} />
-                  <Text style={styles.smallActionText}>Wishlist</Text>
+                <TouchableOpacity style={styles.smallAction} onPress={() => void Share.share({ message: `My A'FRO virtual try-on${displayResultUri ? `: ${displayResultUri}` : ''}` })}>
+                  <Ionicons name="share-outline" size={15} color={Colors.text.primary} />
+                  <Text style={styles.smallActionText}>Share</Text>
                 </TouchableOpacity>
               </View>
 
@@ -1576,10 +1649,13 @@ export default function TryOnScreen() {
         animationType="fade"
         onRequestClose={() => setResultPreviewOpen(false)}
       >
-        <TouchableOpacity style={styles.fullPreviewBackdrop} activeOpacity={1} onPress={() => setResultPreviewOpen(false)}>
-          {resultImageSource ? <Image source={resultImageSource} style={styles.fullPreviewImage} resizeMode="contain" /> : null}
-          <Text style={styles.fullPreviewHint}>Tap anywhere to close</Text>
-        </TouchableOpacity>
+        <View style={styles.fullPreviewBackdrop}>
+          {resultPreviewMode === 'comparison' && personUri && resultImageSource ? (
+            <BeforeAfterSlider beforeUri={personUri} afterSource={resultImageSource} onOpenFullSize={() => undefined} fullScreen />
+          ) : resultImageSource ? <PinchResultPreview source={resultImageSource} /> : null}
+          <TouchableOpacity style={styles.fullPreviewClose} onPress={() => setResultPreviewOpen(false)}><Ionicons name="close" size={24} color={Colors.white} /></TouchableOpacity>
+          <Text style={styles.fullPreviewHint}>{resultPreviewMode === 'comparison' ? 'Swipe to compare · tap × to close' : 'Pinch to zoom · tap × to close'}</Text>
+        </View>
       </Modal>
     </SafeAreaView>
   );
@@ -2218,31 +2294,44 @@ const styles = StyleSheet.create({
   },
   personPreviewBox: {
     alignItems: 'center',
-    borderColor: Colors.border.active,
     borderRadius: Radius.md,
-    borderStyle: 'dashed',
-    borderWidth: 1,
-    height: 280,
     justifyContent: 'center',
     marginBottom: Spacing.xl,
     overflow: 'hidden',
     position: 'relative',
-    width: '92%',
+    width: '72%',
+    aspectRatio: 3 / 4,
   },
   personPreview: {
     height: '100%',
     width: '100%',
   },
-  scanLine: {
-    backgroundColor: 'rgba(47, 126, 198, 0.20)',
-    borderBottomColor: Colors.brand.blue,
-    borderBottomWidth: 2,
-    height: 84,
+  scanBand: {
+    height: '38%',
     left: 0,
     position: 'absolute',
     right: 0,
     top: 0,
   },
+  scanLeadingLine: {
+    backgroundColor: 'rgba(200,230,255,0.95)',
+    bottom: 0,
+    height: 2,
+    left: 0,
+    position: 'absolute',
+    right: 0,
+  },
+  scanLeadingGlow: {
+    bottom: -14,
+    height: 14,
+    left: 0,
+    position: 'absolute',
+    right: 0,
+  },
+  viewfinder: { position: 'absolute', width: 20, height: 20, borderColor: Colors.brand.blue, borderWidth: 3 },
+  viewfinderTL: { left: 10, top: 10, borderRightWidth: 0, borderBottomWidth: 0 }, viewfinderTR: { right: 10, top: 10, borderLeftWidth: 0, borderBottomWidth: 0 }, viewfinderBL: { left: 10, bottom: 10, borderRightWidth: 0, borderTopWidth: 0 }, viewfinderBR: { right: 10, bottom: 10, borderLeftWidth: 0, borderTopWidth: 0 },
+  garmentChip: { alignItems: 'center', flexDirection: 'row', gap: 8, backgroundColor: Colors.bg.card, borderColor: Colors.border.default, borderWidth: 1, borderRadius: Radius.full, maxWidth: '92%', minHeight: 44, paddingHorizontal: 6, paddingRight: 12, marginBottom: Spacing.md },
+  garmentThumb: { width: 32, height: 32, borderRadius: 8, backgroundColor: Colors.bg.input }, garmentLabel: { color: Colors.text.primary, fontSize: FontSize.xs, fontWeight: '800', flexShrink: 1 },
   scanLabel: {
     alignItems: 'center',
     backgroundColor: 'rgba(8, 42, 81, 0.84)',
@@ -2292,13 +2381,13 @@ const styles = StyleSheet.create({
     color: Colors.brand.blue,
     fontSize: FontSize.sm,
     fontWeight: '900',
-    marginTop: Spacing.sm,
+    marginTop: Spacing.sm, minHeight: 20,
   },
   generatingText: {
     color: Colors.text.secondary,
     fontSize: FontSize.sm,
     marginTop: Spacing.sm,
-    textAlign: 'center',
+    textAlign: 'center', minHeight: 20,
   },
   dots: {
     flexDirection: 'row',
@@ -2316,7 +2405,7 @@ const styles = StyleSheet.create({
     color: Colors.text.secondary,
     fontSize: FontSize.sm,
     fontWeight: '800',
-    marginTop: Spacing.sm,
+    marginTop: Spacing.sm, minHeight: 20, fontVariant: ['tabular-nums'],
   },
   backgroundBrowseButton: {
     alignItems: 'center',
@@ -2345,6 +2434,7 @@ const styles = StyleSheet.create({
     borderRadius: Radius.full,
     height: '100%',
   },
+  indeterminateFill: { backgroundColor: 'rgba(14,76,143,0.45)', borderRadius: Radius.full, height: '100%', width: '34%' },
   resultHeader: {
     alignItems: 'center',
     flexDirection: 'row',
@@ -2386,6 +2476,28 @@ const styles = StyleSheet.create({
     height: 250,
     width: 280,
   },
+  compareBox: { height: 250, marginTop: Spacing.md, borderRadius: Radius.md, overflow: 'hidden', position: 'relative', backgroundColor: '#EAF2FC' },
+  fullCompareBox: { height: '74%', marginTop: 0, width: '92%' },
+  compareImage: { position: 'absolute', width: '100%', height: '100%' },
+  afterClip: { position: 'absolute', left: 0, top: 0, bottom: 0, overflow: 'hidden' },
+  compareHandle: { position: 'absolute', top: 0, bottom: 0, width: 36, marginLeft: -18, alignItems: 'center', justifyContent: 'center' },
+  compareHandleLine: { position: 'absolute', top: 0, bottom: 0, width: 2, backgroundColor: Colors.white },
+  compareKnob: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.brand.blue, borderWidth: 2, borderColor: Colors.white },
+  compareBefore: { position: 'absolute', left: 8, top: 8, borderRadius: Radius.full, backgroundColor: 'rgba(8,45,92,0.78)', paddingHorizontal: 8, paddingVertical: 4 },
+  compareAfter: { position: 'absolute', right: 8, top: 8, borderRadius: Radius.full, backgroundColor: 'rgba(8,45,92,0.78)', paddingHorizontal: 8, paddingVertical: 4 },
+  compareExpandHint: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(8, 42, 81, 0.80)',
+    borderRadius: Radius.full,
+    bottom: 8,
+    flexDirection: 'row',
+    gap: 5,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 5,
+    position: 'absolute',
+    right: 8,
+  },
+  compareLabel: { color: Colors.white, fontSize: 9, fontWeight: '900' },
   expandHint: {
     alignItems: 'center',
     backgroundColor: 'rgba(8, 42, 81, 0.80)',
@@ -2536,6 +2648,12 @@ const styles = StyleSheet.create({
     borderRadius: Radius.full,
     height: '100%',
   },
+  gaugeRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, marginVertical: Spacing.md, padding: Spacing.sm, borderRadius: Radius.md, backgroundColor: '#F7FAFE' },
+  gauge: { width: 76, height: 76, borderRadius: 38, borderWidth: 7, alignItems: 'center', justifyContent: 'center' },
+  gaugeValue: { fontSize: FontSize.xl, fontWeight: '900', lineHeight: 26 },
+  gaugeSuffix: { color: Colors.text.secondary, fontSize: 9, fontWeight: '800' },
+  gaugeCopy: { flex: 1 },
+  gaugeCaption: { color: Colors.text.primary, fontSize: FontSize.sm, fontWeight: '800', marginTop: 3 },
   reportMetaList: {
     alignItems: 'center',
     borderBottomColor: Colors.border.default,
@@ -2601,6 +2719,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.sm,
     paddingVertical: 4,
   },
+  fitStatusGood: { backgroundColor: '#DCF7E8', color: '#137A44' },
+  fitStatusTight: { backgroundColor: '#FDE1E4', color: '#B42336' },
+  fitStatusLoose: { backgroundColor: '#FFF1D2', color: '#966000' },
   whyResultButton: {
     alignItems: 'center',
     borderTopColor: Colors.border.default,
@@ -2644,6 +2765,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginTop: Spacing.md,
   },
+  fullPreviewClose: { position: 'absolute', top: 54, right: Spacing.lg, width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(8,45,92,0.78)' },
   bottomActions: {
     flexDirection: 'row',
     gap: Spacing.sm,

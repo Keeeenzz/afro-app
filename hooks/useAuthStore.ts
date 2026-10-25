@@ -5,8 +5,12 @@ export interface AuthUser {
   email: string;
   full_name: string;
   phone?: string;
+  gender?: string | null;
   is_admin: boolean;
   profile_photo_url?: string;
+  cover_photo_url?: string | null;
+  audienceIds?: number[];
+  audienceLabels?: string | null;
   shipping_address?: string | null;
   address_house_no?: string | null;
   address_street?: string | null;
@@ -39,6 +43,7 @@ type Draft = Partial<{
   first_name: string;
   last_name: string;
   phone: string;
+  gender: string;
   id_type: string;
   // To this: // id_type_id: number; // id_type_label: string; // keep for display purposes
   id_number: string;
@@ -54,6 +59,7 @@ type Draft = Partial<{
   address_zip: string | null;
   fashion_style: string;
   preferred_size: string;
+  audienceIds: number[];
   skin_hex: string | null;
   body_chest_cm: number | null;
   body_waist_cm: number | null;

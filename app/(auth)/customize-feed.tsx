@@ -47,6 +47,7 @@ type SizeStandard = {
   hipCmMin?: number | null; hipCmMax?: number | null;
   heightCmMin?: number | null; heightCmMax?: number | null;
 };
+type Audience = { id: number; label: string };
 
 const SKIN_TONES = [
   { label: 'Fair', hex: '#F6D7C3' },
@@ -88,6 +89,8 @@ export default function CustomizeFeedPage() {
   const isEditMode = !!user?.user_id;
 
   const [selectedStyles, setSelectedStyles] = useState<string[]>([]);
+  const [audiences, setAudiences] = useState<Audience[]>([]);
+  const [selectedAudienceIds, setSelectedAudienceIds] = useState<number[]>([]);
   const [selectedSize, setSelectedSize] = useState<string | null>(null);
   const [skinHex, setSkinHex] = useState('');
   const [chestCm, setChestCm] = useState('');
@@ -111,6 +114,7 @@ export default function CustomizeFeedPage() {
         : [];
 
     setSelectedStyles(savedStyles);
+    setSelectedAudienceIds(draft.audienceIds ?? user?.audienceIds ?? []);
     setSelectedSize(draft.preferred_size ?? user?.preferred_size ?? null);
     setSkinHex(draft.skin_hex ?? user?.skin_hex ?? '');
     setChestCm(String(draft.body_chest_cm ?? user?.body_chest_cm ?? ''));
@@ -130,13 +134,14 @@ export default function CustomizeFeedPage() {
     user?.body_hip_cm,
     user?.body_waist_cm,
     user?.fashion_style,
+    user?.audienceIds,
     user?.preferred_size,
     user?.skin_hex,
   ]);
 
   useEffect(() => {
-    apiGet<{ sizes?: SizeStandard[] }>('/products/meta/lookups')
-      .then((result) => setSizeStandards(result.sizes ?? []))
+    apiGet<{ sizes?: SizeStandard[]; styleAudiences?: Audience[] }>('/products/meta/lookups')
+      .then((result) => { setSizeStandards(result.sizes ?? []); setAudiences(result.styleAudiences ?? []); })
       .catch(() => setSizeStandards([]));
   }, []);
 
@@ -180,6 +185,7 @@ export default function CustomizeFeedPage() {
       setError('Please pick at least one style.');
       return false;
     }
+    if (!selectedAudienceIds.length) { setError('Please select at least one shopping preference.'); return false; }
 
     if (!isEditMode && !selectedSize) {
       setError('Please select your preferred size.');
@@ -205,6 +211,7 @@ export default function CustomizeFeedPage() {
     const preferredSize = selectedSize ?? '';
     const profileData = {
       fashion_style: selectedStyles.join(','),
+      audienceIds: selectedAudienceIds,
       preferred_size: preferredSize,
       skin_hex: skinHex.trim() || null,
       body_chest_cm: toNullableNumber(chestCm),
@@ -342,6 +349,10 @@ export default function CustomizeFeedPage() {
             );
           })}
         </View>
+
+        <Text style={styles.sectionTitle}>Shopping Preferences</Text>
+        <Text style={styles.preferenceHint}>Choose all product audiences you want to see first.</Text>
+        <View style={styles.chipGrid}>{audiences.map((audience) => { const selected = selectedAudienceIds.includes(audience.id); return <TouchableOpacity key={audience.id} style={[styles.chip, selected && styles.chipSelected]} onPress={() => { setSelectedAudienceIds((current) => selected ? current.filter((id) => id !== audience.id) : [...current, audience.id]); setError(''); }}><Text style={[styles.chipLabel, selected && styles.chipLabelSelected]}>{audience.label}</Text></TouchableOpacity>; })}</View>
 
         <Text style={styles.sectionTitle}>Body Measurements</Text>
         <View style={styles.measureGrid}>
@@ -510,6 +521,7 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     marginBottom: Spacing.sm,
   },
+  preferenceHint: { color: Colors.text.secondary, fontSize: FontSize.xs, marginTop: -Spacing.xs, marginBottom: Spacing.sm },
   chipGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',

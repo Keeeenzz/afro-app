@@ -12,6 +12,7 @@ import { useRouter } from 'expo-router';
 import { apiGet, apiPost, imageUrl } from '@/lib/api';
 import { useAuthStore } from '@/hooks/useAuthStore';
 import { Colors, FontSize, Radius } from '@/constants/theme';
+import { useToast } from '@/components/ui/Toast';
 
 type SavedProduct = {
   id: string;
@@ -25,6 +26,7 @@ type SavedProduct = {
 export function SavedTab() {
   const router = useRouter();
   const { user, token } = useAuthStore();
+  const { showToast } = useToast();
   const [items, setItems] = useState<SavedProduct[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -51,6 +53,7 @@ export function SavedTab() {
     setItems((current) => current.filter((item) => item.id !== productId));
     try {
       await apiPost('/saved/toggle', { userId: user.user_id, productId }, token);
+      showToast('Removed from saved', 'success');
     } catch {
       setItems(previous);
     }
@@ -68,7 +71,7 @@ export function SavedTab() {
     return (
       <View style={styles.empty}>
         <Ionicons name="heart-outline" size={34} color={Colors.text.muted} />
-        <Text style={styles.emptyTitle}>No saved products yet</Text>
+        <Text style={styles.emptyTitle}>Nothing saved yet</Text>
         <Text style={styles.emptyText}>Tap the heart on a product to keep it here.</Text>
       </View>
     );
@@ -113,6 +116,7 @@ export function SavedTab() {
             <Text style={styles.savedPrice}>
               ₱ {Number(item.price ?? 0).toLocaleString('en-PH', { maximumFractionDigits: 0 })}
             </Text>
+            <TouchableOpacity style={styles.tryOnButton} onPress={() => router.push({ pathname: '/(tabs)/try-on', params: { productId: item.id } })}><Ionicons name="sparkles-outline" size={15} color={Colors.white} /><Text style={styles.tryOnText}>Try on</Text></TouchableOpacity>
           </TouchableOpacity>
         );
       })}
@@ -151,13 +155,13 @@ const styles = StyleSheet.create({
   savedCard: {
     width: '47%',
     backgroundColor: Colors.bg.card,
-    borderRadius: Radius.md,
+    borderRadius: 22,
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: Colors.border.default,
   },
   savedImage: {
-    height: 130,
+    height: 142,
     backgroundColor: Colors.bg.input,
     alignItems: 'center',
     justifyContent: 'center',
@@ -171,8 +175,11 @@ const styles = StyleSheet.create({
     top: 8,
     right: 8,
     backgroundColor: '#E8F4FF',
-    borderRadius: 12,
-    padding: 4,
+    borderRadius: 22,
+    height: 44,
+    width: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   savedName: {
     fontSize: FontSize.sm,
@@ -192,7 +199,8 @@ const styles = StyleSheet.create({
     color: Colors.brand.blue,
     fontWeight: '800',
     paddingHorizontal: 10,
-    paddingBottom: 10,
     marginTop: 2,
   },
+  tryOnButton: { alignItems: 'center', alignSelf: 'flex-start', backgroundColor: Colors.brand.blue, borderRadius: Radius.full, flexDirection: 'row', gap: 4, height: 36, justifyContent: 'center', margin: 10, marginTop: 8, paddingHorizontal: 12 },
+  tryOnText: { color: Colors.white, fontSize: FontSize.xs, fontWeight: '900' },
 });

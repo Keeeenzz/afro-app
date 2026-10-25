@@ -178,7 +178,7 @@ export default function EmailPage() {
           {otpSent && !verified && (
             <>
               <Text style={styles.otpLabel}>Enter verification code</Text>
-              <OTPInput length={6} value={otp} onChange={(value) => {
+              <OTPInput length={6} value={otp} error={Boolean(otpError)} onChange={(value) => {
                 setOtp(value);
                 if (otpError) setOtpError('');
               }} />

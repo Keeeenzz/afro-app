@@ -1,0 +1,12 @@
+env: load .env
+env: export EXPO_PUBLIC_API_BASE_URL
+Starting project at C:\Users\Kenneth\afro-app
+Logs: C:\Users\Kenneth\afro-app\.expo\dev\logs\start.log
+Starting Metro Bundler
+
+warning: Bundler cache is empty, rebuilding (this may take a minute)
+Waiting on http://localhost:8081
+
+An update for expo is available: 57.0.20 → ~57.0.30
+13 other packages may need updating. Run npx expo install --check for details.
+Logs for your project will appear below.

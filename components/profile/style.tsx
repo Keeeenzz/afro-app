@@ -30,10 +30,12 @@ export function StyleTab() {
   const savedStyles = draft.fashion_style
     ? draft.fashion_style.split(',').filter(Boolean)
     : user?.fashion_style
-      ? [user.fashion_style]
+      ? user.fashion_style.split(',').map((style) => style.trim()).filter(Boolean)
       : [];
   const preferredSize = draft.preferred_size ?? user?.preferred_size ?? '-';
   const skinHex = draft.skin_hex ?? user?.skin_hex ?? null;
+  const audiences = draft.audienceIds ?? user?.audienceIds ?? [];
+  const audienceLabels = (user?.audienceLabels ?? '').split(',').map((label) => label.trim()).filter(Boolean);
 
   return (
     <ScrollView showsVerticalScrollIndicator={false}>
@@ -66,6 +68,13 @@ export function StyleTab() {
             {preferredSize}
           </Text>
         </View>
+      </View>
+
+      <Text style={styles.sectionTitle}>Shopping Preferences</Text>
+      <View style={styles.chipRow}>
+        {audiences.length ? audiences.map((id, index) => (
+          <View key={id} style={[styles.chip, styles.chipActive]}><Text style={[styles.chipText, styles.chipTextActive]}>{audienceLabels[index] ?? `Preference ${id}`}</Text></View>
+        )) : <Text style={styles.emptyText}>No shopping preferences selected.</Text>}
       </View>
 
       <Text style={styles.sectionTitle}>Body Measurements</Text>

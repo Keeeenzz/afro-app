@@ -4,6 +4,7 @@ import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Colors, FontSize, Radius, Spacing } from '@/constants/theme';
 import { useTryOnJobStore } from '@/hooks/useTryOnJobStore';
 import { resolvedProductImageUri } from '@/lib/tryOn';
+import { AnimatedProgressBar } from './AnimatedProgressBar';
 
 export function TryOnDock() {
   const router = useRouter();
@@ -36,9 +37,7 @@ export function TryOnDock() {
       <View style={styles.copy}>
         <Text style={styles.title} numberOfLines={1}>{title}</Text>
         <Text style={styles.subtitle} numberOfLines={1}>{subtitle}</Text>
-        <View style={styles.track}>
-          <View style={[styles.fill, { width: `${Math.min(100, Math.max(3, progress))}%` }]} />
-        </View>
+        <AnimatedProgressBar value={progress} style={styles.track} />
       </View>
       <View style={styles.iconBadge}>
         <Ionicons name="sparkles-outline" size={16} color={Colors.white} />
@@ -54,7 +53,7 @@ const styles = StyleSheet.create({
     borderColor: Colors.border.default,
     borderRadius: Radius.full,
     borderWidth: 1,
-    bottom: 22,
+    bottom: 88,
     elevation: 10,
     flexDirection: 'row',
     gap: Spacing.sm,
@@ -104,11 +103,6 @@ const styles = StyleSheet.create({
     height: 5,
     marginTop: 6,
     overflow: 'hidden',
-  },
-  fill: {
-    backgroundColor: Colors.brand.blue,
-    borderRadius: Radius.full,
-    height: '100%',
   },
   iconBadge: {
     alignItems: 'center',

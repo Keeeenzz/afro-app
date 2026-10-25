@@ -1,10 +1,12 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   Image,
   ImageBackground,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -15,12 +17,19 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import LottieView from 'lottie-react-native';
+import * as Haptics from 'expo-haptics';
+import { useToast } from '@/components/ui/Toast';
+import Swipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
+import Animated, { interpolate, runOnJS, useAnimatedReaction, useAnimatedStyle, type SharedValue } from 'react-native-reanimated';
+import { MotiView } from 'moti';
 import * as ImagePicker from 'expo-image-picker';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { ApiError, apiDelete, apiGet, apiPost, apiPostForm, imageUrl } from '@/lib/api';
 import { Colors, FontSize, Radius, Spacing } from '@/constants/theme';
 import { useAuthStore, type AuthUser } from '@/hooks/useAuthStore';
 import { useNav } from '@/context/NavContext';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 type CartItem = {
   cartItemId: string;
@@ -38,6 +47,9 @@ type CartItem = {
 type Step = 'cart' | 'checkout' | 'receipt' | 'confirmed';
 
 const GCASH_NUMBER = '09568313505';
+const BOTTOM_TAB_BAR_HEIGHT = 74;
+const CHECKOUT_ACTION_HEIGHT = 48;
+const CART_CHECKOUT_BAR_HEIGHT = 76;
 
 type ShippingEvaluation = {
   allowed: boolean;
@@ -93,7 +105,9 @@ function getAddress(user: AuthUser | null) {
 export default function CartScreen() {
   const router = useRouter();
   const { openNav } = useNav();
+  const insets = useSafeAreaInsets();
   const { user, token } = useAuthStore();
+  const { showToast } = useToast();
   const [items, setItems] = useState<CartItem[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [step, setStep] = useState<Step>('cart');
@@ -111,10 +125,15 @@ export default function CartScreen() {
   const [shippingLoading, setShippingLoading] = useState(false);
   const [vouchers, setVouchers] = useState<Voucher[]>([]);
   const [voucherCode, setVoucherCode] = useState('');
+  const [voucherError, setVoucherError] = useState('');
   const [appliedVoucher, setAppliedVoucher] = useState<AppliedVoucher | null>(null);
   const [voucherLoading, setVoucherLoading] = useState(false);
   const [parcelConfirmation, setParcelConfirmation] = useState<ParcelConfirmation | null>(null);
   const [acknowledgedParcelCount, setAcknowledgedParcelCount] = useState<number | null>(null);
+  const [undoItem, setUndoItem] = useState<CartItem | null>(null);
+  const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => { if (undoTimer.current) clearTimeout(undoTimer.current); }, []);
 
   const loadCart = useCallback(async () => {
     if (!user?.user_id) {
@@ -195,9 +214,26 @@ export default function CartScreen() {
 
     try {
       await apiDelete(`/cart/items/${item.cartItemId}`, { userId: user.user_id }, token);
+      if (undoTimer.current) clearTimeout(undoTimer.current);
+      setUndoItem(item);
+      undoTimer.current = setTimeout(() => setUndoItem(null), 4500);
+      showToast('Removed from cart', 'info', { label: 'Undo', onPress: () => void undoRemove() }, 4500);
     } catch (err) {
       setItems(previousItems);
       Alert.alert('Could not remove item', err instanceof Error ? err.message : 'Please try again.');
+    }
+  };
+
+  const undoRemove = async () => {
+    const item = undoItem;
+    if (!item || !user?.user_id) return;
+    if (undoTimer.current) clearTimeout(undoTimer.current);
+    setUndoItem(null);
+    try {
+      await apiPost('/cart/items', { userId: user.user_id, productId: item.productId, sizeId: item.sizeId, quantity: item.quantity }, token);
+      await loadCart();
+    } catch (err) {
+      Alert.alert('Could not restore item', err instanceof Error ? err.message : 'Please add it to your cart again.');
     }
   };
 
@@ -265,7 +301,15 @@ export default function CartScreen() {
   };
 
   const applyVoucher = async (code = voucherCode) => {
-    if (!user?.user_id || !code.trim()) return;
+    if (!code.trim()) {
+      const message = 'Enter a voucher code';
+      setVoucherError(message);
+      showToast(message, 'error');
+      return;
+    }
+    if (!user?.user_id) return;
+
+    setVoucherError('');
     setVoucherLoading(true);
     try {
       const result = await apiPost<{ code: string; discountAmount: number }>('/cart/voucher/evaluate', {
@@ -276,8 +320,13 @@ export default function CartScreen() {
       setAppliedVoucher({ code: result.code, discountAmount: Number(result.discountAmount) });
       setVoucherCode(result.code);
     } catch (err) {
-      Alert.alert('Voucher unavailable', err instanceof Error ? err.message : 'This voucher cannot be applied to your order.');
-      setAppliedVoucher(null);
+      const message = err instanceof ApiError && typeof err.data?.message === 'string'
+        ? err.data.message
+        : err instanceof ApiError
+          ? 'Invalid voucher code'
+          : "Couldn't apply voucher. Try again.";
+      setVoucherError(message);
+      showToast(message, 'error');
     } finally {
       setVoucherLoading(false);
     }
@@ -286,6 +335,20 @@ export default function CartScreen() {
   const removeVoucher = () => {
     setAppliedVoucher(null);
     setVoucherCode('');
+    setVoucherError('');
+  };
+
+  const updateVoucherCode = (value: string) => {
+    setVoucherCode(value);
+    if (voucherError) setVoucherError('');
+  };
+
+  const toggleSelectAll = () => {
+    setShippingEvaluation(null);
+    setAcknowledgedParcelCount(null);
+    setAppliedVoucher(null);
+    setVoucherCode('');
+    setSelectedIds(selectedIds.size === items.length ? new Set() : new Set(items.map((item) => item.cartItemId)));
   };
 
   const chooseReceipt = async () => {
@@ -351,6 +414,8 @@ export default function CartScreen() {
       setCreatedOrderTotal(total);
       setCreatedOrderImages(selectedItems.map((item) => item.imageUrl).filter((value): value is string => Boolean(value)).slice(0, 2));
       setStep('confirmed');
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      showToast('Order confirmed — we’ll keep you posted.', 'success');
       setReferenceNumber('');
       setReceipt(null);
       await loadCart();
@@ -365,6 +430,8 @@ export default function CartScreen() {
         }
       }
       const message = err instanceof Error ? err.message : 'Please try again.';
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      showToast(message, 'error');
       Alert.alert('Could not place order', message);
     } finally {
       setPlacing(false);
@@ -412,59 +479,41 @@ export default function CartScreen() {
   return (
     <ImageBackground source={require('@/assets/afro-logo-black.png')} style={styles.screen} imageStyle={styles.bgImage}>
       <View style={styles.overlay}>
-        <Header onMenu={openNav} onHome={() => router.replace('/(tabs)/catalog')} />
+        {step !== 'cart' ? <Header onMenu={openNav} onHome={() => router.replace('/(tabs)/catalog')} /> : null}
 
         {step !== 'confirmed' ? (
-          <View style={styles.titleRow}>
-            <TouchableOpacity onPress={() => (step === 'cart' ? router.back() : setStep(step === 'receipt' ? 'checkout' : 'cart'))}>
+          <View style={[styles.titleRow, step === 'cart' && styles.cartTitleRow, step === 'cart' && { paddingTop: insets.top + 14 }]}>
+            <TouchableOpacity style={step === 'cart' ? styles.cartBackButton : undefined} onPress={() => (step === 'cart' ? router.back() : setStep(step === 'receipt' ? 'checkout' : 'cart'))}>
               <Ionicons name="arrow-back" size={25} color={Colors.text.primary} />
             </TouchableOpacity>
-            <Text style={styles.titleText}>{step === 'cart' ? 'My Cart' : 'Checkout'}</Text>
-            <View style={{ width: 25 }} />
+            <View style={styles.cartTitleWrap}><Text style={styles.titleText}>{step === 'cart' ? 'My Cart' : 'Checkout'}</Text>{step === 'cart' ? <View style={styles.cartCount}><Text style={styles.cartCountText}>{items.length}</Text></View> : null}</View>
+            <View pointerEvents="none" style={step === 'cart' ? styles.cartHeaderSpacer : { width: 25 }} />
           </View>
         ) : null}
 
         {step === 'cart' && (
           <ScrollView
-            contentContainerStyle={styles.content}
+            contentContainerStyle={styles.cartContent}
             showsVerticalScrollIndicator={false}
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={Colors.brand.blueLight} />}
           >
             {error ? <Text style={styles.error}>{error}</Text> : null}
             {!items.length ? (
-              <EmptyCart />
+              <EmptyCart onBrowse={() => router.replace('/(tabs)/catalog')} />
             ) : (
-              items.map((item) => (
-                <View key={item.cartItemId} style={styles.itemCard}>
-                  <TouchableOpacity style={styles.cartItemOpen} onPress={() => openProductOverview(item)} activeOpacity={0.84}>
-                    {item.imageUrl ? <Image source={{ uri: imageUrl(item.imageUrl) ?? item.imageUrl }} style={styles.itemImage} /> : <View style={styles.itemImage} />}
-                    <View style={styles.itemInfo}>
-                      <View style={styles.itemTitleRow}>
-                        <Text style={styles.itemName} numberOfLines={1}>{item.productName}</Text>
-                        <Text style={styles.sizeBadge}>{item.size}</Text>
-                      </View>
-                      <Text style={styles.itemDesc} numberOfLines={1}>{item.description || item.color || 'A FRO item'}</Text>
-                      <Text style={styles.itemMeta}>Qty {item.quantity}</Text>
-                    </View>
-                  </TouchableOpacity>
-                  <View style={styles.itemActions}>
-                    <Pressable style={styles.checkButton} onPress={() => toggleItem(item.cartItemId)}>
-                      <Ionicons
-                        name={selectedIds.has(item.cartItemId) ? 'checkmark-circle' : 'ellipse-outline'}
-                        size={23}
-                        color={selectedIds.has(item.cartItemId) ? '#092b61' : Colors.text.secondary}
-                      />
-                    </Pressable>
-                    <Text style={styles.price}>{peso(Number(item.unitPrice) * Number(item.quantity))}</Text>
-                    <TouchableOpacity onPress={() => removeItem(item)}>
-                      <Text style={styles.removeText}>Remove</Text>
-                    </TouchableOpacity>
-                  </View>
+              <>
+                <View style={styles.cartListTools}>
+                  <Pressable style={styles.selectAllButton} onPress={toggleSelectAll}><Ionicons name={selectedIds.size === items.length ? 'checkmark-circle' : 'ellipse-outline'} size={26} color={selectedIds.size === items.length ? Colors.brand.blue : Colors.text.secondary} /><Text style={styles.selectAllText}>Select all</Text></Pressable>
+                  <View style={styles.swipeHelper}><Ionicons name="arrow-back" size={18} color={Colors.text.secondary} /><Text style={styles.swipeHelperText}>Swipe a card to remove</Text></View>
                 </View>
-              ))
+                {items.map((item) => <CartItemCard key={item.cartItemId} item={item} selected={selectedIds.has(item.cartItemId)} onToggle={() => toggleItem(item.cartItemId)} onOpen={() => openProductOverview(item)} onRemove={() => void removeItem(item)} />)}
+              </>
             )}
 
-            <SummaryCard subtotal={subtotal} shipping={0} total={subtotal} showShipping={false} itemCount={selectedItems.length} />
+            {items.length ? <>
+              <Text style={styles.cartSummaryHeading}>Order summary</Text>
+              <SummaryCard subtotal={subtotal} shipping={0} discount={voucherDiscount} total={total} showShipping={false} itemCount={selectedItems.length} />
+            </> : null}
             {shippingEvaluation?.allowed && Number(shippingEvaluation.parcelCount ?? 1) > 1 ? (
               <ParcelWarning
                 parcelCount={Number(shippingEvaluation.parcelCount)}
@@ -472,70 +521,81 @@ export default function CartScreen() {
                 shippingFee={Number(shippingEvaluation.shippingFee)}
               />
             ) : null}
-            <TouchableOpacity
-              style={[styles.primaryButton, (!selectedItems.length || shippingLoading) && styles.disabled]}
-              disabled={!selectedItems.length || shippingLoading}
-              onPress={beginCheckout}
-            >
-              <Text style={styles.primaryText}>{shippingLoading ? 'Calculating shipping…' : 'Checkout'}</Text>
-            </TouchableOpacity>
           </ScrollView>
         )}
 
+        {step === 'cart' && items.length ? <View style={[styles.cartCheckoutBar, { bottom: BOTTOM_TAB_BAR_HEIGHT + insets.bottom + Spacing.sm }]}><View><Text style={styles.cartTotalLabel}>Total</Text><Text style={styles.cartTotal}>{peso(total)}</Text></View><TouchableOpacity style={[styles.cartCheckoutButton, (!selectedItems.length || shippingLoading) && styles.cartCheckoutDisabled]} disabled={!selectedItems.length || shippingLoading} onPress={beginCheckout}><Text style={styles.cartCheckoutText}>{shippingLoading ? 'Calculating…' : 'Checkout'}</Text><Ionicons name="arrow-forward" size={20} color={Colors.white} /></TouchableOpacity></View> : null}
+
         {step === 'checkout' && (
-          <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-            <ProgressBars active={1} />
-            <AddressPanel user={user} address={fullAddress} />
-            <PaymentPanel />
-            <VoucherPanel vouchers={vouchers} loading={voucherLoading} code={voucherCode} appliedVoucher={appliedVoucher} onCodeChange={setVoucherCode} onApply={applyVoucher} onRemove={removeVoucher} />
-            <SummaryCard subtotal={subtotal} shipping={shipping} discount={voucherDiscount} total={total} showShipping itemCount={selectedItems.length} />
-            <TouchableOpacity style={styles.primaryButton} onPress={() => setStep('receipt')}>
-              <Text style={styles.primaryText}>Continue</Text>
-            </TouchableOpacity>
-          </ScrollView>
+          <KeyboardAvoidingView style={styles.checkoutScreen} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+            <ScrollView
+              contentContainerStyle={[styles.content, styles.checkoutContent, { paddingBottom: BOTTOM_TAB_BAR_HEIGHT + insets.bottom + CHECKOUT_ACTION_HEIGHT + Spacing.xl }]}
+              showsVerticalScrollIndicator={false}
+              keyboardDismissMode="on-drag"
+              keyboardShouldPersistTaps="handled"
+            >
+              <ProgressBars active={1} />
+              <AddressPanel user={user} address={fullAddress} />
+              <PaymentPanel />
+              <VoucherPanel vouchers={vouchers} loading={voucherLoading} code={voucherCode} error={voucherError} appliedVoucher={appliedVoucher} onCodeChange={updateVoucherCode} onApply={applyVoucher} onRemove={removeVoucher} />
+              <SummaryCard subtotal={subtotal} shipping={shipping} discount={voucherDiscount} total={total} showShipping itemCount={selectedItems.length} />
+            </ScrollView>
+            <View style={[styles.checkoutFooter, { paddingBottom: BOTTOM_TAB_BAR_HEIGHT + insets.bottom + Spacing.sm }]}>
+              <TouchableOpacity style={styles.checkoutPrimaryButton} onPress={() => setStep('receipt')}>
+                <Text style={styles.primaryText}>Continue</Text>
+              </TouchableOpacity>
+            </View>
+          </KeyboardAvoidingView>
         )}
 
         {step === 'receipt' && (
-          <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-            <ProgressBars active={2} />
-            <AddressPanel user={user} address={fullAddress} />
-            <PaymentPanel />
-            <VoucherPanel vouchers={vouchers} loading={voucherLoading} code={voucherCode} appliedVoucher={appliedVoucher} onCodeChange={setVoucherCode} onApply={applyVoucher} onRemove={removeVoucher} />
-            <SummaryCard subtotal={subtotal} shipping={shipping} discount={voucherDiscount} total={total} showShipping itemCount={selectedItems.length} />
-            <Panel icon="receipt" title="Upload Receipt">
-              <Image source={require('@/assets/gcash-qr.png')} style={styles.qrImage} resizeMode="contain" />
-              <Text style={styles.gcashNumber}>GCash Number: {GCASH_NUMBER}</Text>
-              <TouchableOpacity style={styles.uploadBox} onPress={chooseReceipt}>
-                {receipt ? (
-                  <Image source={{ uri: receipt.uri }} style={styles.receiptPreview} />
-                ) : (
-                  <>
-                    <Ionicons name="image-outline" size={26} color={Colors.text.primary} />
-                    <Text style={styles.uploadText}>Tap to upload your receipt</Text>
-                  </>
-                )}
+          <KeyboardAvoidingView style={styles.checkoutScreen} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+            <ScrollView
+              contentContainerStyle={[styles.content, styles.checkoutContent, { paddingBottom: BOTTOM_TAB_BAR_HEIGHT + insets.bottom + CHECKOUT_ACTION_HEIGHT + Spacing.xl }]}
+              showsVerticalScrollIndicator={false}
+              keyboardDismissMode="on-drag"
+              keyboardShouldPersistTaps="handled"
+            >
+              <ProgressBars active={2} />
+              <AddressPanel user={user} address={fullAddress} />
+              <PaymentPanel />
+              <VoucherPanel vouchers={vouchers} loading={voucherLoading} code={voucherCode} error={voucherError} appliedVoucher={appliedVoucher} onCodeChange={updateVoucherCode} onApply={applyVoucher} onRemove={removeVoucher} />
+              <SummaryCard subtotal={subtotal} shipping={shipping} discount={voucherDiscount} total={total} showShipping itemCount={selectedItems.length} />
+              <Panel icon="receipt" title="Upload Receipt">
+                <Image source={require('@/assets/gcash-qr.png')} style={styles.qrImage} resizeMode="contain" />
+                <Text style={styles.gcashNumber}>GCash Number: {GCASH_NUMBER}</Text>
+                <TouchableOpacity style={styles.uploadBox} onPress={chooseReceipt}>
+                  {receipt ? (
+                    <Image source={{ uri: receipt.uri }} style={styles.receiptPreview} />
+                  ) : (
+                    <>
+                      <Ionicons name="image-outline" size={26} color={Colors.text.primary} />
+                      <Text style={styles.uploadText}>Tap to upload your receipt</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+                <Text style={styles.inputLabel}>Reference Number</Text>
+                <TextInput
+                  style={styles.referenceInput}
+                  value={referenceNumber}
+                  onChangeText={setReferenceNumber}
+                  placeholder="Enter GCash reference no."
+                  placeholderTextColor={Colors.text.muted}
+                  keyboardType="number-pad"
+                />
+              </Panel>
+            </ScrollView>
+            <View style={[styles.checkoutFooter, { paddingBottom: BOTTOM_TAB_BAR_HEIGHT + insets.bottom + Spacing.sm }]}>
+              <TouchableOpacity style={[styles.checkoutPrimaryButton, placing && styles.disabled]} onPress={() => void placeOrder()} disabled={placing}>
+                {placing ? <ActivityIndicator color={Colors.white} /> : <Text style={styles.primaryText}>Place Order</Text>}
               </TouchableOpacity>
-              <Text style={styles.inputLabel}>Reference Number</Text>
-              <TextInput
-                style={styles.referenceInput}
-                value={referenceNumber}
-                onChangeText={setReferenceNumber}
-                placeholder="Enter GCash reference no."
-                placeholderTextColor={Colors.text.muted}
-                keyboardType="number-pad"
-              />
-            </Panel>
-            <TouchableOpacity style={[styles.primaryButton, placing && styles.disabled]} onPress={() => void placeOrder()} disabled={placing}>
-              {placing ? <ActivityIndicator color={Colors.white} /> : <Text style={styles.primaryText}>Place Order</Text>}
-            </TouchableOpacity>
-          </ScrollView>
+            </View>
+          </KeyboardAvoidingView>
         )}
 
         {step === 'confirmed' && (
           <View style={styles.confirmed}>
-            <View style={styles.confirmIcon}>
-              <Ionicons name="checkmark" size={52} color={Colors.white} />
-            </View>
+            <View style={styles.confirmIcon}><LottieView source={require('@/assets/order-success.json')} autoPlay loop={false} style={styles.successLottie} /></View>
             <Text style={styles.confirmText}>Order confirmed</Text>
             <Text style={styles.confirmSubtext}>We'll notify you once it's processed.</Text>
             <View style={styles.confirmationCard}>
@@ -589,6 +649,7 @@ export default function CartScreen() {
             </View>
           </View>
         </Modal>
+      {undoItem ? <MotiView from={{ opacity: 0, translateY: 22 }} animate={{ opacity: 1, translateY: 0 }} exit={{ opacity: 0 }} style={styles.undoBar}><Text style={styles.undoText} numberOfLines={1}>{undoItem.productName} removed</Text><TouchableOpacity onPress={() => void undoRemove()}><Text style={styles.undoAction}>UNDO</Text></TouchableOpacity></MotiView> : null}
       </View>
     </ImageBackground>
   );
@@ -608,13 +669,52 @@ function Header({ onMenu, onHome }: { onMenu: () => void; onHome: () => void }) 
   );
 }
 
-function EmptyCart() {
+function EmptyCart({ onBrowse }: { onBrowse: () => void }) {
   return (
     <View style={styles.empty}>
       <Ionicons name="cart-outline" size={42} color={Colors.text.secondary} />
       <Text style={styles.emptyTitle}>Your cart is empty</Text>
       <Text style={styles.emptyText}>Products you add from the catalog will appear here.</Text>
+      <TouchableOpacity style={styles.emptyBrowseButton} onPress={onBrowse}><Text style={styles.emptyBrowseText}>Browse catalog</Text></TouchableOpacity>
     </View>
+  );
+}
+
+function SwipeDeleteAction({ translation, onRemove }: { translation: SharedValue<number>; onRemove: () => void }) {
+  const actionStyle = useAnimatedStyle(() => ({ opacity: interpolate(translation.value, [-112, -20, 0], [1, 0.18, 0]) }));
+  useAnimatedReaction(
+    () => translation.value < -190,
+    (shouldRemove, previouslyRemoving) => {
+      if (shouldRemove && !previouslyRemoving) runOnJS(onRemove)();
+    },
+  );
+  return <Animated.View style={[styles.swipeDelete, actionStyle]}><TouchableOpacity style={styles.swipeDeletePressable} onPress={onRemove}><Ionicons name="trash-outline" size={22} color={Colors.white} /><Text style={styles.swipeDeleteText}>Remove</Text></TouchableOpacity></Animated.View>;
+}
+
+function CartItemCard({ item, selected, onToggle, onOpen, onRemove }: { item: CartItem; selected: boolean; onToggle: () => void; onOpen: () => void; onRemove: () => void }) {
+  return (
+    <Swipeable
+      renderRightActions={(_, translation) => <SwipeDeleteAction translation={translation} onRemove={onRemove} />}
+      rightThreshold={56}
+      overshootRight
+      overshootFriction={2}
+      dragOffsetFromRight={-12}
+      containerStyle={styles.swipeContainer}
+      childrenContainerStyle={styles.swipeChildren}
+    >
+      <View style={styles.itemCard}>
+        <TouchableOpacity style={styles.itemImageTile} onPress={onOpen} activeOpacity={0.86}>
+          {item.imageUrl ? <Image source={{ uri: imageUrl(item.imageUrl) ?? item.imageUrl }} style={styles.itemImage} /> : <Ionicons name="shirt-outline" size={32} color={Colors.text.secondary} />}
+          <Pressable style={styles.itemSelectOverlay} hitSlop={6} onPress={onToggle} accessibilityRole="checkbox" accessibilityState={{ checked: selected }}><Ionicons name={selected ? 'checkmark' : 'ellipse-outline'} size={17} color={Colors.white} /></Pressable>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.itemInfo} onPress={onOpen} activeOpacity={0.86}>
+          <View style={styles.itemTitleRow}><Text style={styles.itemName} numberOfLines={1}>{item.productName}</Text><Text style={styles.itemPrice}>{peso(item.unitPrice)}</Text></View>
+          <View style={styles.sizeBadge}><Text style={styles.sizeBadgeText}>Size {item.size}</Text></View>
+          <Text style={styles.itemDesc} numberOfLines={1}>{item.description || item.color || 'A FRO item'}</Text>
+          <View style={styles.itemBottomRow}><View style={styles.prelovedTag}><Ionicons name="heart-outline" size={16} color={Colors.text.secondary} /><Text style={styles.prelovedText}>Qty 1 · Preloved</Text></View><TouchableOpacity style={styles.itemTrashButton} onPress={onRemove} accessibilityRole="button" accessibilityLabel={`Remove ${item.productName} from cart`}><Ionicons name="trash-outline" size={21} color={Colors.text.secondary} /></TouchableOpacity></View>
+        </TouchableOpacity>
+      </View>
+    </Swipeable>
   );
 }
 
@@ -655,11 +755,12 @@ function ParcelWarning({ parcelCount, shippingFeePerParcel, shippingFee }: Omit<
 }
 
 function VoucherPanel({
-  vouchers, loading, code, appliedVoucher, onCodeChange, onApply, onRemove,
+  vouchers, loading, code, error, appliedVoucher, onCodeChange, onApply, onRemove,
 }: {
   vouchers: Voucher[];
   loading: boolean;
   code: string;
+  error: string;
   appliedVoucher: AppliedVoucher | null;
   onCodeChange: (value: string) => void;
   onApply: (code?: string) => void;
@@ -669,27 +770,29 @@ function VoucherPanel({
     <Panel icon="pricetag" title="Voucher" rightText={loading ? 'Loading…' : undefined}>
       {appliedVoucher ? (
         <View style={styles.appliedVoucher}>
-          <View>
-            <Text style={styles.appliedVoucherCode}>{appliedVoucher.code}</Text>
+          <View style={styles.appliedVoucherCopy}>
+            <View style={styles.appliedVoucherChip}><Ionicons name="checkmark" size={14} color="#146C36" /><Text style={styles.appliedVoucherCode}>{appliedVoucher.code} applied</Text></View>
             <Text style={styles.appliedVoucherText}>Discount applied: {peso(appliedVoucher.discountAmount)}</Text>
           </View>
-          <TouchableOpacity onPress={onRemove}><Text style={styles.removeVoucherText}>Remove</Text></TouchableOpacity>
+          <TouchableOpacity style={styles.removeVoucherButton} onPress={onRemove} accessibilityRole="button" accessibilityLabel="Remove voucher"><Ionicons name="close" size={18} color="#146C36" /></TouchableOpacity>
         </View>
       ) : (
         <>
           <View style={styles.voucherEntry}>
             <TextInput
-              style={styles.voucherInput}
+              style={[styles.voucherInput, error ? styles.voucherInputError : undefined]}
               value={code}
               onChangeText={onCodeChange}
               autoCapitalize="characters"
               placeholder="Enter voucher code"
               placeholderTextColor={Colors.text.muted}
+              accessibilityHint={error || 'Enter a voucher code, then apply it to your order.'}
             />
-            <TouchableOpacity style={styles.applyVoucherButton} onPress={() => onApply()} disabled={loading || !code.trim()}>
+            <TouchableOpacity style={styles.applyVoucherButton} onPress={() => onApply()} disabled={loading}>
               <Text style={styles.applyVoucherText}>Apply</Text>
             </TouchableOpacity>
           </View>
+          {error ? <Text style={styles.voucherError} accessibilityLiveRegion="polite">{error}</Text> : null}
           {vouchers.length ? (
             <View style={styles.voucherList}>
               <Text style={styles.availableVoucherLabel}>Available vouchers</Text>
@@ -765,7 +868,7 @@ function SummaryCard({
 }) {
   return (
     <View style={styles.summary}>
-      <Text style={styles.summaryTitle}>{showShipping ? 'Order Info' : 'AMOUNT'}</Text>
+      <Text style={styles.summaryTitle}>{showShipping ? 'Order Info' : 'Order summary'}</Text>
       <View style={styles.summaryRow}>
         <Text style={styles.summaryLabel}>Product</Text>
         <Text style={styles.summaryValue}>{itemCount} Item{itemCount === 1 ? '' : 's'}</Text>
@@ -774,14 +877,14 @@ function SummaryCard({
         <Text style={styles.summaryLabel}>Subtotal</Text>
         <Text style={styles.summaryValue}>{peso(subtotal)}</Text>
       </View>
+      {discount > 0 ? (
+        <View style={styles.summaryRow}>
+          <Text style={styles.summaryLabel}>Voucher discount</Text>
+          <Text style={styles.discountValue}>−{peso(discount)}</Text>
+        </View>
+      ) : null}
       {showShipping ? (
         <>
-          {discount > 0 ? (
-            <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Voucher discount</Text>
-              <Text style={styles.discountValue}>−{peso(discount)}</Text>
-            </View>
-          ) : null}
         <View style={styles.summaryRow}>
           <Text style={styles.summaryLabel}>Shipping Fee</Text>
           <Text style={styles.summaryValue}>{peso(shipping)}</Text>
@@ -790,7 +893,7 @@ function SummaryCard({
       ) : null}
       <View style={styles.summaryTotalRow}>
         <Text style={styles.summaryTotalLabel}>Total{showShipping ? ' Payment' : ''}</Text>
-        <Text style={styles.summaryTotalValue}>{peso(total)}</Text>
+        <MotiView key={Math.round(total * 100)} from={{ opacity: 0.25, translateY: 4 }} animate={{ opacity: 1, translateY: 0 }} transition={{ type: 'timing', duration: 190 }}><Text style={styles.summaryTotalValue}>{peso(total)}</Text></MotiView>
       </View>
     </View>
   );
@@ -821,46 +924,88 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
+  cartTitleRow: { paddingTop: Spacing.lg, paddingBottom: Spacing.lg },
+  cartTitleWrap: { alignItems: 'center', flexDirection: 'row', gap: Spacing.sm },
+  cartBackButton: { alignItems: 'center', backgroundColor: Colors.white, borderRadius: 22, height: 44, justifyContent: 'center', width: 44, shadowColor: Colors.black, shadowOpacity: 0.08, shadowRadius: 12, elevation: 3 },
+  cartHeaderSpacer: { height: 44, width: 44 },
+  cartCount: { alignItems: 'center', backgroundColor: '#E5ECF5', borderRadius: Radius.full, height: 32, justifyContent: 'center', minWidth: 32, paddingHorizontal: Spacing.sm },
+  cartCountText: { color: Colors.text.primary, fontSize: FontSize.sm, fontWeight: '900' },
   titleText: { color: Colors.text.primary, fontSize: FontSize.lg, fontWeight: '900' },
   content: { paddingHorizontal: Spacing.lg, paddingBottom: 36, gap: Spacing.md },
+  cartContent: { gap: Spacing.md, paddingHorizontal: Spacing.md, paddingBottom: BOTTOM_TAB_BAR_HEIGHT + CART_CHECKOUT_BAR_HEIGHT + 72 },
+  cartListTools: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', marginBottom: Spacing.sm },
+  selectAllButton: { alignItems: 'center', flexDirection: 'row', gap: Spacing.sm, minHeight: 44 },
+  selectAllText: { color: Colors.text.secondary, fontSize: FontSize.base, fontWeight: '800' },
+  swipeHelper: { alignItems: 'center', flexDirection: 'row', gap: Spacing.xs },
+  swipeHelperText: { color: Colors.text.secondary, fontSize: FontSize.sm, fontWeight: '700' },
+  checkoutScreen: { flex: 1 },
+  checkoutContent: { flexGrow: 1 },
+  checkoutFooter: {
+    backgroundColor: 'rgba(244, 247, 253, 0.98)',
+    borderTopColor: Colors.border.default,
+    borderTopWidth: 1,
+    bottom: 0,
+    left: 0,
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.sm,
+    position: 'absolute',
+    right: 0,
+    zIndex: 20,
+  },
+  checkoutPrimaryButton: {
+    alignItems: 'center',
+    backgroundColor: Colors.brand.blue,
+    borderRadius: Radius.full,
+    height: CHECKOUT_ACTION_HEIGHT,
+    justifyContent: 'center',
+    width: '100%',
+  },
+  swipeContainer: { borderRadius: 26, marginBottom: Spacing.md, overflow: 'hidden' },
+  swipeChildren: { borderRadius: 26 },
   itemCard: {
-    minHeight: 92,
-    borderRadius: Radius.md,
-    padding: Spacing.sm,
+    minHeight: 152,
+    borderRadius: 26,
+    padding: Spacing.md,
     flexDirection: 'row',
     gap: Spacing.sm,
     backgroundColor: Colors.bg.card,
     borderWidth: 1,
-    borderColor: 'rgba(221, 241, 255, 0.14)',
+    borderColor: Colors.white,
+    shadowColor: Colors.black,
+    shadowOpacity: 0.06,
+    shadowRadius: 18,
+    elevation: 3,
   },
-  cartItemOpen: { flex: 1, flexDirection: 'row', gap: Spacing.sm },
-  itemImage: { width: 70, height: 70, borderRadius: Radius.sm, backgroundColor: '#EDF4FD' },
-  itemInfo: { flex: 1, justifyContent: 'center' },
+  itemImageTile: { backgroundColor: '#EAF1FA', borderRadius: 20, height: 120, justifyContent: 'center', overflow: 'hidden', position: 'relative', width: 120, alignItems: 'center' },
+  itemImage: { height: '100%', width: '100%' },
+  itemSelectOverlay: { alignItems: 'center', backgroundColor: Colors.brand.blue, borderColor: Colors.white, borderRadius: 16, borderWidth: 2, height: 32, justifyContent: 'center', left: 6, position: 'absolute', top: 6, width: 32 },
+  itemInfo: { flex: 1, justifyContent: 'space-between', minHeight: 120 },
   itemTitleRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
   itemName: { flex: 1, color: Colors.text.primary, fontSize: FontSize.base, fontWeight: '900' },
+  itemPrice: { color: Colors.text.primary, fontSize: FontSize.md, fontWeight: '900' },
   itemDesc: { color: '#0f437c', fontSize: FontSize.xs, marginTop: 2 },
-  itemMeta: { color: '#30586a', fontSize: FontSize.xs, fontWeight: '800', marginTop: 4 },
   sizeBadge: {
-    minWidth: 25,
-    paddingHorizontal: 5,
-    borderRadius: Radius.full,
-    color: "white",
-    fontSize: 9,
-    fontWeight: '900',
-    textAlign: 'center',
-    backgroundColor: "#123b78",
+    alignSelf: 'flex-start', backgroundColor: '#E5ECF5', borderRadius: Radius.full, marginTop: Spacing.xs, paddingHorizontal: Spacing.sm, paddingVertical: 5,
   },
-  itemActions: { width: 72, alignItems: 'flex-end', justifyContent: 'space-between' },
-  checkButton: { minHeight: 24, minWidth: 24, alignItems: 'center', justifyContent: 'center' },
-  price: { color: Colors.text.primary, fontSize: FontSize.base, fontWeight: '900' },
-  removeText: { color: '#083c56', fontSize: 10, fontWeight: '900' },
+  sizeBadgeText: { color: Colors.text.primary, fontSize: FontSize.xs, fontWeight: '900' },
+  itemBottomRow: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', marginTop: Spacing.sm },
+  prelovedTag: { alignItems: 'center', backgroundColor: '#F2F6FC', borderRadius: Radius.full, flexDirection: 'row', gap: Spacing.xs, paddingHorizontal: Spacing.sm, paddingVertical: 7 },
+  prelovedText: { color: Colors.text.secondary, fontSize: FontSize.xs, fontWeight: '800' },
+  itemTrashButton: { alignItems: 'center', height: 44, justifyContent: 'center', width: 44 },
+  swipeDelete: { alignSelf: 'stretch', backgroundColor: Colors.status.error, borderRadius: 26, justifyContent: 'center', width: 112 },
+  swipeDeletePressable: { alignItems: 'center', flex: 1, gap: Spacing.xs, justifyContent: 'center' },
+  swipeDeleteText: { color: Colors.white, fontSize: FontSize.sm, fontWeight: '900' },
+  undoBar: { position: 'absolute', left: Spacing.md, right: Spacing.md, bottom: 88, minHeight: 54, borderRadius: Radius.md, paddingHorizontal: Spacing.md, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: Colors.text.primary, elevation: 12, shadowColor: Colors.black, shadowOpacity: 0.18, shadowRadius: 12 },
+  undoText: { flex: 1, color: Colors.white, fontSize: FontSize.sm, fontWeight: '700', marginRight: Spacing.sm },
+  undoAction: { color: '#A9DBFF', fontSize: FontSize.sm, fontWeight: '900' },
   summary: {
-    borderRadius: Radius.md,
+    borderRadius: 26,
     padding: Spacing.md,
     backgroundColor: Colors.bg.card,
     borderWidth: 1,
-    borderColor: 'rgba(221, 241, 255, 0.14)',
+    borderColor: Colors.white,
   },
+  cartSummaryHeading: { color: Colors.text.secondary, fontSize: FontSize.base, fontWeight: '900', letterSpacing: 1.2, marginTop: Spacing.sm, textTransform: 'uppercase' },
   summaryTitle: { color: Colors.text.primary, fontSize: FontSize.base, fontWeight: '900', marginBottom: Spacing.sm },
   summaryRow: { minHeight: 25, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   summaryLabel: { color: Colors.text.primary, fontSize: FontSize.xs, fontWeight: '700' },
@@ -875,7 +1020,13 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   summaryTotalLabel: { color: Colors.text.primary, fontSize: FontSize.base, fontWeight: '900' },
-  summaryTotalValue: { color: Colors.text.primary, fontSize: FontSize.base, fontWeight: '900' },
+  summaryTotalValue: { color: Colors.text.primary, fontSize: FontSize['2xl'], fontWeight: '900' },
+  cartCheckoutBar: { alignItems: 'center', backgroundColor: Colors.white, borderRadius: 26, flexDirection: 'row', justifyContent: 'space-between', left: Spacing.md, padding: Spacing.md, position: 'absolute', right: Spacing.md, shadowColor: Colors.black, shadowOpacity: 0.14, shadowRadius: 18, elevation: 12, zIndex: 40 },
+  cartTotalLabel: { color: Colors.text.secondary, fontSize: FontSize.sm, fontWeight: '800' },
+  cartTotal: { color: Colors.text.primary, fontSize: FontSize['2xl'], fontWeight: '900', marginTop: 2 },
+  cartCheckoutButton: { alignItems: 'center', backgroundColor: Colors.brand.blue, borderRadius: Radius.full, flexDirection: 'row', gap: Spacing.sm, height: 52, justifyContent: 'center', minWidth: 168, paddingHorizontal: Spacing.lg },
+  cartCheckoutDisabled: { backgroundColor: '#AEBBCB' },
+  cartCheckoutText: { color: Colors.white, fontSize: FontSize.base, fontWeight: '900' },
   primaryButton: {
     alignSelf: 'center',
     minWidth: 150,
@@ -934,6 +1085,8 @@ const styles = StyleSheet.create({
   paymentText: { flex: 1, color: Colors.text.primary, fontSize: FontSize.sm, fontWeight: '800' },
   voucherEntry: { flexDirection: 'row', gap: Spacing.sm, alignItems: 'center' },
   voucherInput: { flex: 1, height: 42, borderRadius: Radius.sm, borderWidth: 1, borderColor: '#8FA9C8', color: Colors.text.primary, paddingHorizontal: Spacing.sm, fontSize: FontSize.sm },
+  voucherInputError: { borderColor: Colors.status.error },
+  voucherError: { color: Colors.status.error, fontSize: FontSize.xs, fontWeight: '700', marginTop: Spacing.xs },
   applyVoucherButton: { height: 42, borderRadius: Radius.sm, backgroundColor: Colors.brand.blue, paddingHorizontal: Spacing.md, alignItems: 'center', justifyContent: 'center' },
   applyVoucherText: { color: Colors.white, fontSize: FontSize.xs, fontWeight: '900' },
   voucherList: { marginTop: Spacing.md, gap: Spacing.xs },
@@ -943,10 +1096,12 @@ const styles = StyleSheet.create({
   voucherOptionText: { color: Colors.text.secondary, fontSize: 10, marginTop: 2 },
   voucherOptionSave: { color: '#12733E', fontSize: 10, fontWeight: '900' },
   noVoucherText: { color: Colors.text.secondary, fontSize: 10, marginTop: Spacing.sm },
-  appliedVoucher: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: Spacing.sm, borderRadius: Radius.sm, backgroundColor: '#E8F8ED' },
+  appliedVoucher: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: Spacing.sm, borderRadius: Radius.md, backgroundColor: '#E8F8ED' },
+  appliedVoucherCopy: { flex: 1 },
+  appliedVoucherChip: { alignSelf: 'flex-start', alignItems: 'center', backgroundColor: '#D6F2DE', borderRadius: Radius.full, flexDirection: 'row', gap: 4, paddingHorizontal: Spacing.sm, paddingVertical: 5 },
   appliedVoucherCode: { color: '#146C36', fontSize: FontSize.sm, fontWeight: '900' },
   appliedVoucherText: { color: '#28774A', fontSize: 10, marginTop: 2 },
-  removeVoucherText: { color: Colors.brand.blue, fontSize: FontSize.xs, fontWeight: '900' },
+  removeVoucherButton: { alignItems: 'center', height: 44, justifyContent: 'center', width: 44 },
   qrImage: { alignSelf: 'center', width: 160, height: 210, marginBottom: Spacing.sm, backgroundColor: Colors.white },
   gcashNumber: { color: Colors.text.primary, fontSize: FontSize.xs, fontWeight: '900', marginBottom: Spacing.sm },
   uploadBox: {
@@ -981,6 +1136,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.brand.blue,
     marginBottom: Spacing.lg,
   },
+  successLottie: { width: 96, height: 96 },
   confirmText: { color: Colors.text.primary, fontSize: 28, lineHeight: 34, fontWeight: '900', textAlign: 'center' },
   confirmSubtext: { color: Colors.text.secondary, fontSize: FontSize.sm, textAlign: 'center', marginTop: Spacing.xs, marginBottom: Spacing.lg },
   confirmationCard: { width: '100%', backgroundColor: Colors.white, borderRadius: Radius.lg, padding: Spacing.md, marginBottom: Spacing.lg, borderWidth: 1, borderColor: '#E2EAF4' },
@@ -1000,6 +1156,8 @@ const styles = StyleSheet.create({
   empty: { minHeight: 260, alignItems: 'center', justifyContent: 'center' },
   emptyTitle: { color: Colors.text.primary, fontSize: FontSize.base, fontWeight: '900', marginTop: Spacing.sm },
   emptyText: { color: Colors.text.secondary, fontSize: FontSize.sm, textAlign: 'center', marginTop: Spacing.xs },
+  emptyBrowseButton: { alignItems: 'center', backgroundColor: Colors.brand.blue, borderRadius: Radius.full, height: 44, justifyContent: 'center', marginTop: Spacing.md, paddingHorizontal: Spacing.lg },
+  emptyBrowseText: { color: Colors.white, fontSize: FontSize.sm, fontWeight: '900' },
   error: { color: Colors.status.error, fontSize: FontSize.sm, textAlign: 'center' },
   parcelWarning: { flexDirection: 'row', gap: Spacing.sm, borderRadius: Radius.md, padding: Spacing.md, backgroundColor: '#FFF4D6', borderWidth: 1, borderColor: '#E6BF67' },
   parcelWarningCopy: { flex: 1 },

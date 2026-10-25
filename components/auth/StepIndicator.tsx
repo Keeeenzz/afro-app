@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, StyleSheet } from 'react-native';
 import { Colors, Radius } from '@/constants/theme';
+import { MotiView } from 'moti';
 
 interface StepIndicatorProps {
   total: number;
@@ -11,7 +12,7 @@ export function StepIndicator({ total, current }: StepIndicatorProps) {
   return (
     <View style={styles.container}>
       {Array.from({ length: total }).map((_, i) => (
-        <View key={i} style={[styles.dot, i < current && styles.dotComplete, i === current && styles.dotActive]} />
+        <MotiView key={i} animate={{ width: i === current ? 28 : 8, opacity: i <= current ? 1 : 0.42 }} transition={{ type: 'spring', damping: 15 }} style={[styles.dot, i < current && styles.dotComplete, i === current && styles.dotActive]} />
       ))}
     </View>
   );

@@ -1,6 +1,7 @@
 import React from 'react';
 import { TouchableOpacity, Text, ActivityIndicator, StyleSheet, ViewStyle, TextStyle } from 'react-native';
 import { Colors, FontSize, Radius, Spacing } from '@/constants/theme';
+import * as Haptics from 'expo-haptics';
 
 interface ButtonProps {
   label: string;
@@ -16,7 +17,7 @@ export function Button({ label, onPress, variant = 'primary', loading = false, d
   const isDisabled = disabled || loading;
   return (
     <TouchableOpacity
-      onPress={onPress}
+      onPress={() => { void Haptics.selectionAsync(); onPress(); }}
       disabled={isDisabled}
       activeOpacity={0.75}
       style={[styles.base, variant === 'primary' && styles.primary, variant === 'outline' && styles.outline, variant === 'ghost' && styles.ghost, isDisabled && styles.disabled, style]}
