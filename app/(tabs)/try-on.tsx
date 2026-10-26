@@ -805,6 +805,7 @@ export default function TryOnScreen() {
   const [personUri, setPersonUri] = useState('');
   const [tryOnResult, setTryOnResult] = useState<TryOnResult | null>(null);
   const [displayResultUri, setDisplayResultUri] = useState('');
+  const [resultImageError, setResultImageError] = useState('');
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [savingImage, setSavingImage] = useState(false);
@@ -1214,6 +1215,7 @@ export default function TryOnScreen() {
 
     setGenerating(true);
     setPhase('generating');
+    setResultImageError('');
     setGenerationProgress(0);
     progressAnim.setValue(0);
     animateGenerationProgress(2, 220);
@@ -1574,7 +1576,17 @@ export default function TryOnScreen() {
                 activeOpacity={0.9}
               >
                 {resultImageSource ? (
-                  <Image source={resultImageSource} style={styles.resultImage} resizeMode="contain" />
+                  <ExpoImage
+                    source={resultImageSource}
+                    style={styles.resultImage}
+                    contentFit="contain"
+                    cachePolicy="none"
+                    onLoad={() => setResultImageError('')}
+                    onError={({ error: imageError }) => {
+                      console.warn('[try-on] Generated image failed to load:', imageError);
+                      setResultImageError('The try-on request succeeded, but the generated image could not be decoded. Please try again.');
+                    }}
+                  />
                 ) : (
                   <Ionicons name="image-outline" size={40} color={Colors.text.secondary} />
                 )}
@@ -1583,6 +1595,7 @@ export default function TryOnScreen() {
                   <Text style={styles.expandHintText}>Tap to view full size</Text>
                 </View>
               </TouchableOpacity>
+              {resultImageError ? <Text style={styles.error}>{resultImageError}</Text> : null}
 
               {personUri ? <BeforeAfterSlider beforeUri={personUri} afterSource={resultImageSource} onOpenFullSize={() => { setResultPreviewMode('comparison'); setResultPreviewOpen(true); }} /> : null}
 

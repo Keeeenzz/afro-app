@@ -1,9 +1,7 @@
 import * as FileSystem from 'expo-file-system/legacy';
 import { API_BASE_URL, imageUrl } from '@/lib/api';
 
-export const TRY_ON_API_BASE_URL =
-  process.env.EXPO_PUBLIC_TRYON_API_BASE_URL ??
-  'https://glisteringly-unsyncopated-ara.ngrok-free.dev';
+export const TRY_ON_API_BASE_URL = API_BASE_URL.replace(/\/api$/, '');
 
 type TryOnUploadOptions = {
   jobId?: string;
@@ -33,6 +31,8 @@ export type TryOnResult = {
   report?: string | string[];
   fit_report?: string | string[];
   analysis?: string | string[];
+  image_url?: string;
+  image_base64?: string;
 };
 
 export type TryOnProgress = {
@@ -128,24 +128,34 @@ export async function saveDataImageToGallery(dataImage: string) {
     return downloaded.uri;
   }
 
-  const base64 = dataImage.replace(/^data:image\/\w+;base64,/, '');
+  const base64 = dataImage
+    .replace(/^data:image\/[^;,]+;base64,/i, '')
+    .replace(/\s/g, '');
+  if (!base64 || base64.length < 100 || !/^[a-z\d+/]+=*$/i.test(base64)) {
+    throw new Error('Try-on service returned image data that is empty or invalid.');
+  }
   const uri = `${FileSystem.cacheDirectory}afro-tryon-${Date.now()}.jpg`;
 
   await FileSystem.writeAsStringAsync(uri, base64, {
     encoding: FileSystem.EncodingType.Base64,
   });
 
+  const savedImage = await FileSystem.getInfoAsync(uri);
+  if (!savedImage.exists || !savedImage.size) {
+    throw new Error('The generated try-on image could not be saved on this device.');
+  }
+
   return uri;
 }
 
 export async function materializeTryOnImage(imageReference: string) {
-  if (/^https?:\/\//i.test(imageReference)) {
+  const normalizedReference = imageReference.trim();
+  if (/^https?:\/\//i.test(normalizedReference)) {
     const downloaded = await FileSystem.downloadAsync(
-      imageReference,
+      normalizedReference,
       `${FileSystem.cacheDirectory}afro-tryon-result-${Date.now()}.jpg`,
       {
         headers: {
-          'ngrok-skip-browser-warning': 'true',
           'User-Agent': 'AFRO-React-Native-TryOn',
         },
       },
@@ -153,11 +163,15 @@ export async function materializeTryOnImage(imageReference: string) {
     return downloaded.uri;
   }
 
-  if (imageReference.startsWith('data:image')) {
-    return saveDataImageToGallery(imageReference);
+  if (/^data:image\//i.test(normalizedReference)) {
+    return saveDataImageToGallery(normalizedReference);
   }
 
-  return imageReference;
+  if (normalizedReference.length > 100 && /^[a-z\d+/]+=*$/i.test(normalizedReference)) {
+    return saveDataImageToGallery(`data:image/jpeg;base64,${normalizedReference}`);
+  }
+
+  return normalizedReference;
 }
 
 export async function submitTryOn({
@@ -219,10 +233,14 @@ export async function submitTryOn({
     throw new Error(data.detail ?? data.message ?? 'Try-on generation failed.');
   }
 
-  if (!data.image && data.image_path) {
-    data.image = data.image_path.startsWith('http')
-      ? data.image_path
-      : `${TRY_ON_API_BASE_URL}${data.image_path}`;
+  data.image ??= data.image_path ?? data.image_url;
+  if (!data.image && data.image_base64) {
+    data.image = data.image_base64.startsWith('data:')
+      ? data.image_base64
+      : `data:image/jpeg;base64,${data.image_base64}`;
+  }
+  if (data.image?.startsWith('/')) {
+    data.image = `${API_BASE_URL}${data.image}`;
   }
 
   if (!data.image) {
@@ -237,7 +255,6 @@ function uploadTryOnForm(url: string, form: FormData) {
     const request = new XMLHttpRequest();
 
     request.open('POST', url);
-    request.setRequestHeader('ngrok-skip-browser-warning', 'true');
     request.setRequestHeader('User-Agent', 'AFRO-React-Native-TryOn');
     request.onload = () => {
       resolve({
@@ -253,32 +270,9 @@ function uploadTryOnForm(url: string, form: FormData) {
   });
 }
 
-export async function getTryOnProgress(jobId: string): Promise<TryOnProgress | null> {
-  const response = await fetch(`${API_BASE_URL}/tryon/progress/${encodeURIComponent(jobId)}`, {
-    headers: {
-      'ngrok-skip-browser-warning': 'true',
-      'User-Agent': 'AFRO-React-Native-TryOn',
-    },
-  });
-
-  if (response.status === 404) {
-    return null;
-  }
-
-  const text = await response.text();
-  let data: TryOnProgress & { detail?: string; message?: string };
-
-  try {
-    data = JSON.parse(text);
-  } catch {
-    throw new Error(`Try-on progress returned non-JSON response: ${text.slice(0, 120)}`);
-  }
-
-  if (!response.ok) {
-    throw new Error(data.detail ?? data.message ?? 'Could not load try-on progress.');
-  }
-
-  return data;
+export async function getTryOnProgress(_jobId: string): Promise<TryOnProgress | null> {
+  // The Modal endpoint returns the generated image synchronously and has no progress route.
+  return null;
 }
 
 export function resolvedProductImageUri(raw?: string | null) {
